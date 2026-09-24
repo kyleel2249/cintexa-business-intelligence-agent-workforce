@@ -3,8 +3,12 @@
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agents.registry import list_agents, get_agent, agent_ids
@@ -57,12 +61,27 @@ app.add_middleware(
 
 # --- Simple auth dependency (replace with full JWT in production) ---
 async def get_org_and_user(
-    x_organisation_id: str = Header(..., alias="X-Organisation-Id"),
-    x_user_id: str = Header(..., alias="X-User-Id"),
+    x_organisation_id: Optional[str] = Header(None, alias="X-Organisation-Id"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
 ) -> Dict[str, str]:
-    if not x_organisation_id or not x_user_id:
-        raise HTTPException(401, "Organisation and user headers required")
-    return {"organisation_id": x_organisation_id, "user_id": x_user_id}
+    return {
+        "organisation_id": (x_organisation_id or "default-org").strip(),
+        "user_id": (x_user_id or "default-user").strip(),
+    }
+
+
+async def get_llm_api_key(
+    x_llm_api_key: Optional[str] = Header(None, alias="X-LLM-Api-Key"),
+    authorization: Optional[str] = Header(None),
+) -> Optional[str]:
+    """Accept secret key from header only. Never log or echo the value."""
+    if x_llm_api_key and x_llm_api_key.strip():
+        return x_llm_api_key.strip()
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+        if token:
+            return token
+    return None
 
 
 # --- Tasks ---
@@ -302,13 +321,23 @@ async def agent_activity(agent_id: str, auth: Dict = Depends(get_org_and_user)):
 
 # --- Chat (GPT-style conversational interface) ---
 @app.post(f"{settings.api_prefix}/chat")
-async def chat(req: ChatRequest, auth: Dict = Depends(get_org_and_user)):
+async def chat(
+    req: ChatRequest,
+    auth: Dict = Depends(get_org_and_user),
+    llm_api_key: Optional[str] = Depends(get_llm_api_key),
+):
     try:
-        return await chat_service.send(auth["organisation_id"], auth["user_id"], req)
+        return await chat_service.send(
+            auth["organisation_id"],
+            auth["user_id"],
+            req,
+            api_key=llm_api_key,
+        )
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except Exception as e:
-        raise HTTPException(500, f"Chat failed: {e}")
+        # Never include secrets in error payloads
+        raise HTTPException(500, "Chat failed. Check your API key in Settings and try again.")
 
 
 @app.get(f"{settings.api_prefix}/chat/sessions")
@@ -335,12 +364,12 @@ async def create_chat_session(auth: Dict = Depends(get_org_and_user)):
 @app.get("/health")
 async def health():
     llm = get_llm()
+    server_key = bool(settings.openai_api_key or settings.anthropic_api_key)
     return {
         "status": "ok",
         "service": settings.app_name,
         "agents": agent_ids(),
-        "llm_provider": llm.provider,
-        "llm_available": llm.available,
+        "server_llm_configured": server_key,
         "chat": True,
     }
 
@@ -353,3 +382,29 @@ async def root():
         "api_prefix": settings.api_prefix,
         "chat": f"{settings.api_prefix}/chat",
     }
+
+
+# --- Static UI (same origin — no API base URL required in the browser) ---
+_ROOT = Path(__file__).resolve().parent.parent
+_ASSETS = _ROOT / "assets"
+if _ASSETS.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS)), name="assets")
+
+
+@app.get("/app")
+@app.get("/chat")
+async def spa_app():
+    index = _ROOT / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    raise HTTPException(404, "UI not found")
+
+
+# Prefer serving the chat UI at / when Accept is HTML; JSON clients still get the API root via explicit Accept
+@app.get("/ui")
+async def spa_ui():
+    index = _ROOT / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    raise HTTPException(404, "UI not found")
+

@@ -1,12 +1,8 @@
 (function () {
   "use strict";
 
-  const KEYS = {
-    api: "cintexa_api_base",
-    org: "cintexa_org",
-    user: "cintexa_user",
-    sessions: "cintexa_chat_sessions_v1",
-  };
+  const KEY_STORAGE = "cintexa_llm_api_key";
+  const SESSIONS_KEY = "cintexa_chat_sessions_v2";
 
   const SUGGESTIONS = [
     "Assess my business health",
@@ -20,19 +16,48 @@
 
   const $ = (s) => document.querySelector(s);
 
-  function getApi() {
-    return (localStorage.getItem(KEYS.api) || "").replace(/\/$/, "");
+  /**
+   * API root: same origin by default (when UI is served by FastAPI).
+   * Optional one-time override: window.__CINTEXA_API__ = "https://your-api.example.com"
+   * Users never configure this in Settings — only the secret API key.
+   */
+  function apiRoot() {
+    if (typeof window !== "undefined" && window.__CINTEXA_API__) {
+      return String(window.__CINTEXA_API__).replace(/\/$/, "");
+    }
+    return "";
   }
-  function getOrg() {
-    return localStorage.getItem(KEYS.org) || "demo-org";
+
+  function getApiKey() {
+    try {
+      return sessionStorage.getItem(KEY_STORAGE) || "";
+    } catch {
+      return "";
+    }
   }
-  function getUser() {
-    return localStorage.getItem(KEYS.user) || "demo-user";
+
+  function setApiKey(key) {
+    try {
+      if (key) sessionStorage.setItem(KEY_STORAGE, key);
+      else sessionStorage.removeItem(KEY_STORAGE);
+    } catch (_) {}
+  }
+
+  function maskKey(key) {
+    if (!key) return "not set";
+    if (key.length < 12) return "set";
+    return key.slice(0, 5) + "…" + key.slice(-4);
+  }
+
+  function updateKeyBadge() {
+    const k = getApiKey();
+    const badge = $("#keyBadge");
+    if (badge) badge.textContent = "Key: " + maskKey(k);
   }
 
   function loadLocalSessions() {
     try {
-      return JSON.parse(localStorage.getItem(KEYS.sessions) || "[]");
+      return JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]");
     } catch {
       return [];
     }
@@ -46,37 +71,57 @@
       updated_at: session.updated_at || new Date().toISOString(),
       messages: session.messages || [],
     });
-    localStorage.setItem(KEYS.sessions, JSON.stringify(list.slice(0, 40)));
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, 40)));
     renderSessionList();
   }
 
   function headers() {
-    return {
-      "Content-Type": "application/json",
-      "X-Organisation-Id": getOrg(),
-      "X-User-Id": getUser(),
-    };
+    const h = { "Content-Type": "application/json" };
+    const key = getApiKey();
+    if (key) h["X-LLM-Api-Key"] = key;
+    return h;
   }
 
   async function api(path, opts = {}) {
-    const base = getApi();
-    if (!base) throw new Error("Set API base URL in Settings");
-    const res = await fetch(base + path, {
+    const res = await fetch(apiRoot() + path, {
       ...opts,
       headers: { ...headers(), ...(opts.headers || {}) },
     });
     if (!res.ok) {
-      const t = await res.text();
-      throw new Error(res.status + ": " + t.slice(0, 240));
+      let msg = res.status + " error";
+      try {
+        const j = await res.json();
+        if (j.detail) msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      } catch (_) {
+        try {
+          msg = (await res.text()).slice(0, 200);
+        } catch (__) {}
+      }
+      throw new Error(msg);
     }
     return res.json();
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function simpleMarkdown(text) {
+    let s = escapeHtml(text);
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+    return s;
   }
 
   function renderSuggestions() {
     const el = $("#suggestions");
     if (!el) return;
     el.innerHTML = SUGGESTIONS.map(
-      (s) => `<button type="button" data-s="${s.replace(/"/g, "&quot;")}">${s}</button>`
+      (s) => `<button type="button" data-s="${escapeHtml(s)}">${escapeHtml(s)}</button>`
     ).join("");
     el.querySelectorAll("button").forEach((b) => {
       b.addEventListener("click", () => {
@@ -105,26 +150,9 @@
     });
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function simpleMarkdown(text) {
-    // Minimal safe formatting: **bold**, `code`, newlines already pre-wrap
-    let s = escapeHtml(text);
-    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-    return s;
-  }
-
   function appendMessage(role, content, meta) {
     const welcome = $("#welcome");
     if (welcome) welcome.remove();
-
     const row = document.createElement("div");
     row.className = "msg " + role;
     const avatar = document.createElement("div");
@@ -146,7 +174,6 @@
     row.appendChild(bubble);
     $("#messages").appendChild(row);
     $("#messages").scrollTop = $("#messages").scrollHeight;
-    return row;
   }
 
   function showTyping() {
@@ -171,7 +198,7 @@
       <div class="welcome" id="welcome">
         <div class="welcome-icon">C</div>
         <h2>Business Intelligence workforce</h2>
-        <p>Ask anything about your business — health, market, competitors, forecasts, strategy. Twelve specialist agents plan, research and QA the answer.</p>
+        <p>Ask about business health, markets, competitors, forecasts or strategy. Twelve specialist agents plan the work and quality-check the answer.</p>
         <div class="suggestions" id="suggestions"></div>
       </div>`;
     renderSuggestions();
@@ -200,28 +227,33 @@
 
   async function sendMessage(text) {
     if (busy || !text.trim()) return;
+    if (!getApiKey()) {
+      openSettings();
+      appendMessage(
+        "assistant",
+        "Add your API key in Settings first (OpenAI recommended). The key stays in this browser only."
+      );
+      return;
+    }
+
     busy = true;
     $("#btnSend").disabled = true;
-
     appendMessage("user", text.trim());
     $("#input").value = "";
     autoSize();
     showTyping();
 
     try {
-      const body = {
-        message: text.trim(),
-        session_id: sessionId || undefined,
-      };
       const data = await api("/bi/chat", {
         method: "POST",
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          message: text.trim(),
+          session_id: sessionId || undefined,
+        }),
       });
-
       hideTyping();
       sessionId = data.session_id;
       $("#chatTitle").textContent = data.title || "Chat";
-
       const meta = [
         data.task_state,
         data.message?.meta?.objective,
@@ -230,9 +262,7 @@
       ]
         .filter(Boolean)
         .join(" · ");
-
       appendMessage("assistant", data.message?.content || "No response", meta);
-
       saveLocalSession({
         session_id: data.session_id,
         title: data.title,
@@ -243,8 +273,7 @@
       hideTyping();
       appendMessage(
         "assistant",
-        "I could not complete that request.\n\n" + (err.message || String(err)) +
-          "\n\nCheck Settings → API base URL, and that the API is running with CORS allowing this origin."
+        "I could not complete that request.\n\n" + (err.message || String(err))
       );
     } finally {
       busy = false;
@@ -264,34 +293,22 @@
 
   async function ping() {
     const el = $("#apiStatus");
-    const badge = $("#llmBadge");
-    const base = getApi();
-    if (!base) {
-      el.textContent = "API not configured — open Settings";
-      el.className = "status-line err";
-      badge.textContent = "LLM: —";
-      return;
-    }
     try {
-      const res = await fetch(base + "/health");
-      const data = await res.json();
-      el.textContent = data.llm_available
-        ? "API online · LLM " + (data.llm_provider || "ready")
-        : "API online · add OPENAI_API_KEY for full chat synthesis";
+      const res = await fetch(apiRoot() + "/health");
+      if (!res.ok) throw new Error("bad");
+      el.textContent = getApiKey() ? "Ready · key present" : "Online · add API key in Settings";
       el.className = "status-line ok";
-      badge.textContent = "LLM: " + (data.llm_provider || "none");
     } catch {
-      el.textContent = "API unreachable";
+      el.textContent = "API offline — run the server (uvicorn api.main:app)";
       el.className = "status-line err";
-      badge.textContent = "LLM: —";
     }
+    updateKeyBadge();
   }
 
   function openSettings() {
-    $("#apiBase").value = getApi();
-    $("#orgId").value = getOrg();
-    $("#userId").value = getUser();
+    $("#apiKey").value = getApiKey();
     $("#settingsModal").classList.remove("hidden");
+    setTimeout(() => $("#apiKey").focus(), 50);
   }
 
   function bind() {
@@ -313,18 +330,31 @@
     $("#btnOpenSettings").addEventListener("click", openSettings);
     $("#btnCloseSettings").addEventListener("click", () => $("#settingsModal").classList.add("hidden"));
     $("#btnSaveSettings").addEventListener("click", () => {
-      localStorage.setItem(KEYS.api, ($("#apiBase").value || "").trim().replace(/\/$/, ""));
-      localStorage.setItem(KEYS.org, ($("#orgId").value || "demo-org").trim());
-      localStorage.setItem(KEYS.user, ($("#userId").value || "demo-user").trim());
+      const key = ($("#apiKey").value || "").trim();
+      setApiKey(key);
+      $("#apiKey").value = key;
       $("#settingsModal").classList.add("hidden");
+      updateKeyBadge();
+      ping();
+    });
+    $("#btnClearKey").addEventListener("click", () => {
+      setApiKey("");
+      $("#apiKey").value = "";
+      updateKeyBadge();
       ping();
     });
     $("#btnToggleSidebar")?.addEventListener("click", () => {
       $("#sidebar").classList.toggle("open");
     });
+    // Clear password field from DOM on page hide for slightly safer UX
+    window.addEventListener("pagehide", () => {
+      const inp = $("#apiKey");
+      if (inp) inp.value = getApiKey();
+    });
     renderSuggestions();
     renderSessionList();
     updateSendState();
+    updateKeyBadge();
     ping();
   }
 

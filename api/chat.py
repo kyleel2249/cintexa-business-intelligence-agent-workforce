@@ -71,7 +71,7 @@ class ChatService:
         self._sessions[sid] = session
         return session
 
-    async def send(self, organisation_id: str, user_id: str, req: ChatRequest) -> Dict[str, Any]:
+    async def send(self, organisation_id: str, user_id: str, req: ChatRequest, api_key: Optional[str] = None) -> Dict[str, Any]:
         # Session
         if req.session_id and req.session_id in self._sessions:
             session = self._sessions[req.session_id]
@@ -99,7 +99,7 @@ class ChatService:
 
         # Optional LLM plan refinement
         history = [{"role": m.role, "content": m.content} for m in session.messages[-8:] if m.role in ("user", "assistant")]
-        plan_hint = self.llm.plan_objective(req.message, history[:-1] if history else None)
+        plan_hint = self.llm.plan_objective(req.message, history[:-1] if history else None, api_key=api_key)
 
         payload = TaskCreate(
             request=req.message,
@@ -136,8 +136,8 @@ class ChatService:
             "evidence_ids": task.evidence_ids,
             "plan_hint": plan_hint,
         }
-        if self.llm.available:
-            reply_text = self.llm.synthesise_reply(req.message, synthesis_source, history[:-1])
+        if self.llm.available(api_key):
+            reply_text = self.llm.synthesise_reply(req.message, synthesis_source, history[:-1], api_key=api_key)
         else:
             reply_text = self._deterministic_reply(req.message, task)
 
@@ -149,7 +149,7 @@ class ChatService:
                 "objective": task.objective,
                 "state": task.state.value if hasattr(task.state, "value") else str(task.state),
                 "agents": task.agents_assigned,
-                "llm_provider": self.llm.provider,
+                "llm_provider": self.llm.provider(api_key),
                 "qa": (task.results.get("quality") or {}).get("qa_result"),
             },
         )
@@ -164,7 +164,7 @@ class ChatService:
             "message": assistant_msg.model_dump(),
             "task_id": task.task_id,
             "task_state": task.state.value if hasattr(task.state, "value") else str(task.state),
-            "llm_provider": self.llm.provider,
+            "llm_provider": self.llm.provider(api_key),
             "messages": [m.model_dump() for m in session.messages],
         }
 
@@ -192,9 +192,9 @@ class ChatService:
         qa = task.results.get("quality") or {}
         if qa.get("qa_result"):
             lines.append(f"**Quality assurance:** {qa['qa_result']}")
-        if not self.llm.available:
+        if not self.llm.available(None):
             lines.append("")
             lines.append(
-                "_Configure OPENAI_API_KEY or ANTHROPIC_API_KEY for fuller natural-language synthesis._"
+                "_Add your API key in Settings for fuller natural-language synthesis._"
             )
         return "\n".join(lines).strip()

@@ -1,4 +1,8 @@
-"""LLM adapter — OpenAI primary, Anthropic fallback. Used by orchestrator and agents."""
+"""LLM adapter — OpenAI primary, Anthropic fallback.
+
+Server env keys (OPENAI_API_KEY / ANTHROPIC_API_KEY) are optional defaults.
+Per-request user keys may be passed via api_key= and are never logged or stored.
+"""
 
 from __future__ import annotations
 
@@ -18,37 +22,42 @@ Rules you must follow:
 """
 
 
+def _detect_provider(api_key: str) -> str:
+    """Heuristic: Anthropic keys often start with sk-ant-; otherwise treat as OpenAI."""
+    k = (api_key or "").strip()
+    if k.startswith("sk-ant-"):
+        return "anthropic"
+    if k:
+        return "openai"
+    return "none"
+
+
 class LLMClient:
-    """Thin multi-provider client. Returns plain text or parsed JSON when asked."""
+    """Multi-provider client. Prefer per-request api_key; fall back to server env."""
 
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._openai = None
-        self._anthropic = None
 
-    @property
-    def available(self) -> bool:
-        return bool(self.settings.openai_api_key or self.settings.anthropic_api_key)
+    def resolve_key(self, api_key: Optional[str] = None) -> str:
+        key = (api_key or "").strip()
+        if key:
+            return key
+        return (self.settings.openai_api_key or self.settings.anthropic_api_key or "").strip()
 
-    @property
-    def provider(self) -> str:
-        if self.settings.openai_api_key:
-            return "openai"
-        if self.settings.anthropic_api_key:
-            return "anthropic"
-        return "none"
+    def available(self, api_key: Optional[str] = None) -> bool:
+        return bool(self.resolve_key(api_key))
 
-    def _get_openai(self):
-        if self._openai is None and self.settings.openai_api_key:
-            from openai import OpenAI
-            self._openai = OpenAI(api_key=self.settings.openai_api_key)
-        return self._openai
-
-    def _get_anthropic(self):
-        if self._anthropic is None and self.settings.anthropic_api_key:
-            from anthropic import Anthropic
-            self._anthropic = Anthropic(api_key=self.settings.anthropic_api_key)
-        return self._anthropic
+    def provider(self, api_key: Optional[str] = None) -> str:
+        key = self.resolve_key(api_key)
+        if not key:
+            return "none"
+        # Explicit env preference when no per-request key
+        if not (api_key or "").strip():
+            if self.settings.openai_api_key:
+                return "openai"
+            if self.settings.anthropic_api_key:
+                return "anthropic"
+        return _detect_provider(key)
 
     def chat(
         self,
@@ -58,17 +67,19 @@ class LLMClient:
         temperature: float = 0.3,
         max_tokens: int = 2000,
         json_mode: bool = False,
+        api_key: Optional[str] = None,
     ) -> str:
-        """
-        messages: list of {role: user|assistant, content: str}
-        """
         sys = (system or SYSTEM_GUARDRAILS).strip()
-        if not self.available:
+        key = self.resolve_key(api_key)
+        if not key:
             return self._offline_reply(messages)
 
-        if self.provider == "openai":
-            return self._openai_chat(messages, sys, temperature, max_tokens, json_mode)
-        return self._anthropic_chat(messages, sys, temperature, max_tokens)
+        prov = self.provider(api_key)
+        if prov == "openai":
+            return self._openai_chat(messages, sys, temperature, max_tokens, json_mode, key)
+        if prov == "anthropic":
+            return self._anthropic_chat(messages, sys, temperature, max_tokens, key)
+        return self._offline_reply(messages)
 
     def _openai_chat(
         self,
@@ -77,8 +88,11 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
         json_mode: bool,
+        api_key: str,
     ) -> str:
-        client = self._get_openai()
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key)
         payload: List[Dict[str, str]] = [{"role": "system", "content": system}]
         payload.extend(messages)
         kwargs: Dict[str, Any] = {
@@ -98,15 +112,21 @@ class LLMClient:
         system: str,
         temperature: float,
         max_tokens: int,
+        api_key: str,
     ) -> str:
-        client = self._get_anthropic()
-        # Anthropic wants alternating user/assistant; system is separate
+        from anthropic import Anthropic
+
+        client = Anthropic(api_key=api_key)
         resp = client.messages.create(
             model=self.settings.anthropic_model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system,
-            messages=[{"role": m["role"], "content": m["content"]} for m in messages if m["role"] in ("user", "assistant")],
+            messages=[
+                {"role": m["role"], "content": m["content"]}
+                for m in messages
+                if m["role"] in ("user", "assistant")
+            ],
         )
         parts = []
         for block in resp.content:
@@ -117,28 +137,38 @@ class LLMClient:
     def _offline_reply(self, messages: List[Dict[str, str]]) -> str:
         last = messages[-1]["content"] if messages else ""
         return (
-            "No LLM API key is configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY in the environment "
-            "for full natural-language planning and synthesis.\n\n"
-            "Your message was still accepted by the orchestrator. Specialist agents can run deterministic "
-            f"paths (diagnostics, forecasts from your data) without an LLM.\n\nLast user message preview: {last[:280]}"
+            "No API key is configured. Open Settings and enter your OpenAI API key "
+            "(or Anthropic key starting with sk-ant-). "
+            "Specialist agents can still run deterministic paths without an LLM.\n\n"
+            f"Last message preview: {last[:280]}"
         )
 
-    def plan_objective(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
-        """Use LLM to refine objective and agent selection when available."""
+    def plan_objective(
+        self,
+        user_message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        api_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         prompt = (
             "Given this business request, return JSON with keys: "
             "objective (short snake_case), agents (array of agent ids from: "
-            "strategy, intelligence, diagnostic, market, competitor, research, decision, forecasting, knowledge, quality), "
+            "strategy, intelligence, diagnostic, market, competitor, research, decision, "
+            "forecasting, knowledge, quality), "
             "needs_web_research (bool), needs_user_data (bool), summary (one sentence).\n"
             f"Request: {user_message}"
         )
         messages = list(history or [])
         messages.append({"role": "user", "content": prompt})
-        if not self.available:
+        if not self.available(api_key):
             return {}
         try:
-            raw = self.chat(messages, temperature=0.1, max_tokens=600, json_mode=self.provider == "openai")
-            # Extract JSON if wrapped in markdown
+            raw = self.chat(
+                messages,
+                temperature=0.1,
+                max_tokens=600,
+                json_mode=self.provider(api_key) == "openai",
+                api_key=api_key,
+            )
             start = raw.find("{")
             end = raw.rfind("}")
             if start >= 0 and end > start:
@@ -152,12 +182,13 @@ class LLMClient:
         user_message: str,
         task_results: Dict[str, Any],
         history: Optional[List[Dict[str, str]]] = None,
+        api_key: Optional[str] = None,
     ) -> str:
-        """Turn structured agent outputs into a clear executive chat reply."""
         compact = json.dumps(task_results, default=str)[:12000]
         prompt = (
             "You are the CINTEXA BI assistant speaking to the user in a chat.\n"
-            "Using only the structured agent results below, write a clear, helpful reply in British English.\n"
+            "Using only the structured agent results below, write a clear, helpful reply "
+            "in British English.\n"
             "Structure with short sections where useful (Summary, Findings, Risks, Recommendations).\n"
             "Do not invent numbers or sources not present in the results.\n"
             "If data was unavailable, say so plainly.\n\n"
@@ -166,7 +197,7 @@ class LLMClient:
         )
         messages = list(history or [])[-6:]
         messages.append({"role": "user", "content": prompt})
-        return self.chat(messages, temperature=0.35, max_tokens=2500)
+        return self.chat(messages, temperature=0.35, max_tokens=2500, api_key=api_key)
 
 
 _client: Optional[LLMClient] = None

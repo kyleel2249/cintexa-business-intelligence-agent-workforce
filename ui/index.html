@@ -28,7 +28,7 @@
       </div>
       <div class="session-list" id="sessionList"></div>
       <div class="sidebar-bottom">
-        <div class="status-line" id="apiStatus">Connecting…</div>
+        <div class="status-line" id="apiStatus">Checking…</div>
         <button type="button" class="linkish" id="btnOpenSettings">Settings</button>
       </div>
     </aside>
@@ -37,14 +37,14 @@
       <header class="chat-header">
         <button type="button" class="icon-btn mobile-only" id="btnToggleSidebar" aria-label="Menu">☰</button>
         <h1 id="chatTitle">CINTEXA BI</h1>
-        <span class="header-badge" id="llmBadge">LLM: —</span>
+        <span class="header-badge" id="keyBadge">Key: not set</span>
       </header>
 
       <div class="messages" id="messages">
         <div class="welcome" id="welcome">
           <div class="welcome-icon">C</div>
           <h2>Business Intelligence workforce</h2>
-          <p>Ask anything about your business — health, market, competitors, forecasts, strategy. Twelve specialist agents plan, research and QA the answer.</p>
+          <p>Ask about business health, markets, competitors, forecasts or strategy. Twelve specialist agents plan the work and quality-check the answer.</p>
           <div class="suggestions" id="suggestions"></div>
         </div>
       </div>
@@ -56,7 +56,7 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>
         </form>
-        <p class="disclaimer">Agents never invent market stats, competitor figures or citations. Missing data is marked unavailable.</p>
+        <p class="disclaimer">Your API key stays in this browser and is sent only as a request header — never written to logs or replies.</p>
       </div>
     </section>
   </div>
@@ -65,23 +65,16 @@
     <div class="modal-card">
       <h2>Settings</h2>
       <label>
-        <span>API base URL</span>
-        <input type="url" id="apiBase" placeholder="https://your-api-host.example.com" />
-      </label>
-      <label>
-        <span>Organisation ID</span>
-        <input type="text" id="orgId" value="demo-org" />
-      </label>
-      <label>
-        <span>User ID</span>
-        <input type="text" id="userId" value="demo-user" />
+        <span>API key</span>
+        <input type="password" id="apiKey" autocomplete="off" spellcheck="false" placeholder="sk-… or sk-ant-…" />
       </label>
       <p class="hint">
-        Recommended: host the FastAPI app with <code>OPENAI_API_KEY</code> (or <code>ANTHROPIC_API_KEY</code>) set.
-        OpenAI GPT-4o is the default for planning and synthesis.
+        Paste your <strong>OpenAI</strong> key (recommended) or an <strong>Anthropic</strong> key starting with <code>sk-ant-</code>.
+        The key is stored only in this browser’s session storage and sent as header <code>X-LLM-Api-Key</code>. It is never shown in responses.
       </p>
       <div class="modal-actions">
         <button type="button" class="btn" id="btnSaveSettings">Save</button>
+        <button type="button" class="btn ghost" id="btnClearKey">Clear key</button>
         <button type="button" class="btn ghost" id="btnCloseSettings">Close</button>
       </div>
     </div>
