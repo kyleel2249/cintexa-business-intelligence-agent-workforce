@@ -376,11 +376,26 @@ async def health():
 
 @app.get("/")
 async def root():
+    """Serve the chat UI when available; otherwise JSON status."""
+    index = Path(__file__).resolve().parent.parent / "index.html"
+    if index.is_file():
+        return FileResponse(index)
     return {
         "message": "CINTEXA Business Intelligence Agent Workforce",
         "docs": "/docs",
         "api_prefix": settings.api_prefix,
         "chat": f"{settings.api_prefix}/chat",
+    }
+
+
+@app.get("/api")
+async def api_info():
+    return {
+        "message": "CINTEXA Business Intelligence Agent Workforce",
+        "docs": "/docs",
+        "api_prefix": settings.api_prefix,
+        "chat": f"POST {settings.api_prefix}/chat",
+        "health": "/health",
     }
 
 

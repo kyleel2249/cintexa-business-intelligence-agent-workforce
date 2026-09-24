@@ -271,10 +271,20 @@
       });
     } catch (err) {
       hideTyping();
-      appendMessage(
-        "assistant",
-        "I could not complete that request.\n\n" + (err.message || String(err))
-      );
+      var msg = err.message || String(err);
+      var help = "";
+      if (/\b405\b/.test(msg)) {
+        help =
+          "\n\n**What this means:** this page is static (e.g. Cloudflare Pages) and cannot handle chat POSTs.\n\n" +
+          "**Fix:** run the API on your machine, then open the UI from that server (not only *.pages.dev):\n\n" +
+          "```\nuvicorn api.main:app --host 0.0.0.0 --port 8000\n```\n\n" +
+          "Then open **http://localhost:8000/** — put your API key in Settings and try again.\n\n" +
+          "Your OpenAI key is fine; the missing piece is the running Python backend.";
+      } else if (/Failed to fetch|NetworkError|API offline/i.test(msg)) {
+        help =
+          "\n\nStart the backend: `uvicorn api.main:app --host 0.0.0.0 --port 8000` and use http://localhost:8000/";
+      }
+      appendMessage("assistant", "I could not complete that request.\n\n" + msg + help);
     } finally {
       busy = false;
       updateSendState();
