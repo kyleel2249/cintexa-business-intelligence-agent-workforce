@@ -160,6 +160,43 @@ Built as the foundation for the wider CINTEXA agent workforce.
 
 Licence: MIT (see LICENSE).
 
+
+
+## Chat interface
+
+The primary UI is a **full chat experience** (sidebar sessions, message bubbles, suggestions, typing state) talking to:
+
+```
+POST /bi/chat
+```
+
+Body:
+
+```json
+{ "message": "Assess my business health", "session_id": null }
+```
+
+Headers: `X-Organisation-Id`, `X-User-Id`.
+
+### Recommended LLM API
+
+| Provider | Env var | Default model | Role |
+|----------|---------|---------------|------|
+| **OpenAI (recommended)** | `OPENAI_API_KEY` | `gpt-4o` | Planning + natural-language synthesis |
+| Anthropic (fallback) | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-20241022` | Same if OpenAI key absent |
+
+Without an LLM key the orchestrator still runs specialist agents (diagnostics, forecasts from your numbers, etc.) and returns a structured deterministic reply. With a key you get full conversational synthesis.
+
+Get an OpenAI key: https://platform.openai.com/api-keys
+
+```bash
+export OPENAI_API_KEY=sk-...
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+Then open the Pages UI → **Settings** → set API base URL to your API host (e.g. `http://localhost:8000` or your cloud URL).
+
+
 ## Deployment
 
 ### Cloudflare Pages (this UI)

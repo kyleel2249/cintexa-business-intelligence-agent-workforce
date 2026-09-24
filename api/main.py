@@ -17,6 +17,11 @@ from schemas.tasks import TaskCreate, Task
 settings = get_settings()
 orchestrator = Orchestrator()
 
+from api.chat import ChatService, ChatRequest
+from tools.llm import get_llm
+
+chat_service = ChatService(orchestrator)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,9 +37,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors = list(dict.fromkeys(settings.cors_origin_list + [
+    "https://cintexa-business-intelligence-agent-workforce.pages.dev",
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+    "http://localhost:4173",
+    "http://localhost:3000",
+    "http://localhost:8000",
+]))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=_cors,
+    allow_origin_regex=r"https://.*\.pages\.dev",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -286,13 +300,48 @@ async def agent_activity(agent_id: str, auth: Dict = Depends(get_org_and_user)):
     }
 
 
+# --- Chat (GPT-style conversational interface) ---
+@app.post(f"{settings.api_prefix}/chat")
+async def chat(req: ChatRequest, auth: Dict = Depends(get_org_and_user)):
+    try:
+        return await chat_service.send(auth["organisation_id"], auth["user_id"], req)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Chat failed: {e}")
+
+
+@app.get(f"{settings.api_prefix}/chat/sessions")
+async def list_chat_sessions(auth: Dict = Depends(get_org_and_user)):
+    sessions = chat_service.list_sessions(auth["organisation_id"], auth["user_id"])
+    return [s.model_dump() for s in sessions]
+
+
+@app.get(f"{settings.api_prefix}/chat/sessions/{{session_id}}")
+async def get_chat_session(session_id: str, auth: Dict = Depends(get_org_and_user)):
+    session = chat_service.get_session(session_id)
+    if not session or session.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Session not found")
+    return session.model_dump()
+
+
+@app.post(f"{settings.api_prefix}/chat/sessions")
+async def create_chat_session(auth: Dict = Depends(get_org_and_user)):
+    session = chat_service.create_session(auth["organisation_id"], auth["user_id"])
+    return session.model_dump()
+
+
 # --- Health ---
 @app.get("/health")
 async def health():
+    llm = get_llm()
     return {
         "status": "ok",
         "service": settings.app_name,
         "agents": agent_ids(),
+        "llm_provider": llm.provider,
+        "llm_available": llm.available,
+        "chat": True,
     }
 
 
@@ -302,4 +351,5 @@ async def root():
         "message": "CINTEXA Business Intelligence Agent Workforce",
         "docs": "/docs",
         "api_prefix": settings.api_prefix,
+        "chat": f"{settings.api_prefix}/chat",
     }
