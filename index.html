@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CINTEXA Business Intelligence</title>
+  <meta name="description" content="CINTEXA BI Agent Workforce — coordinated multi-agent business intelligence" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">C</span>
+        <div>
+          <strong>CINTEXA</strong>
+          <span class="brand-sub">Business Intelligence</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview">Overview</button>
+        <button class="nav-item" data-view="request">New request</button>
+        <button class="nav-item" data-view="agents">Agents</button>
+        <button class="nav-item" data-view="tasks">Tasks</button>
+        <button class="nav-item" data-view="diagnostics">Diagnostics</button>
+        <button class="nav-item" data-view="forecasts">Forecasts</button>
+        <button class="nav-item" data-view="reports">Reports</button>
+        <button class="nav-item" data-view="settings">Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="status-pill" id="apiStatus">API: checking…</div>
+        <p class="muted small">12 specialist agents · shared evidence · QA gated</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="viewTitle">Overview</h1>
+        <div class="topbar-actions">
+          <input type="text" id="orgId" class="input sm" placeholder="Organisation ID" value="demo-org" title="X-Organisation-Id" />
+          <input type="text" id="userId" class="input sm" placeholder="User ID" value="demo-user" title="X-User-Id" />
+        </div>
+      </header>
+
+      <!-- Overview -->
+      <section class="view active" id="view-overview">
+        <div class="grid cards-4">
+          <article class="card metric">
+            <span class="label">Business Health</span>
+            <strong class="value" id="healthScore">—</strong>
+            <span class="hint">Run a diagnostic to populate</span>
+          </article>
+          <article class="card metric">
+            <span class="label">Active agents</span>
+            <strong class="value" id="agentCount">12</strong>
+            <span class="hint">Orchestrator + 11 specialists</span>
+          </article>
+          <article class="card metric">
+            <span class="label">Tasks (session)</span>
+            <strong class="value" id="taskCount">0</strong>
+            <span class="hint">This browser session</span>
+          </article>
+          <article class="card metric">
+            <span class="label">QA gate</span>
+            <strong class="value">On</strong>
+            <span class="hint">No unsupported claims reach the user</span>
+          </article>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <h2>What this system does</h2>
+            <p>
+              Submit one high-level business request. The Orchestrator decides which specialists
+              are needed, what evidence is required, and what order the work runs in. Results pass
+              Quality Assurance before you see them.
+            </p>
+            <ul class="clean">
+              <li>No invented market statistics or competitor figures</li>
+              <li>Evidence IDs and confidence labels on significant findings</li>
+              <li>Human approval gates for high-impact external actions</li>
+              <li>Designed to connect later to Marketing, Sales, Finance and other CINTEXA departments</li>
+            </ul>
+            <button class="btn primary" data-goto="request">Start a request</button>
+          </article>
+          <article class="card">
+            <h2>Demonstration scenarios</h2>
+            <div class="scenario-list" id="scenarioList"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- New request -->
+      <section class="view" id="view-request">
+        <article class="card">
+          <h2>Submit a business request</h2>
+          <p class="muted">The Orchestrator will plan agents, gather evidence where available, and route through QA.</p>
+          <label class="field">
+            <span>Request</span>
+            <textarea id="requestText" rows="4" placeholder="e.g. Assess my business health and suggest priorities for the next 90 days"></textarea>
+          </label>
+          <div class="grid two">
+            <label class="field">
+              <span>Industry (optional)</span>
+              <input type="text" id="reqIndustry" class="input" placeholder="SaaS, retail, manufacturing…" />
+            </label>
+            <label class="field">
+              <span>Geography (optional)</span>
+              <input type="text" id="reqGeo" class="input" placeholder="UK, EU, US…" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Metrics JSON (optional — used by diagnostic / intelligence)</span>
+            <textarea id="reqMetrics" rows="3" placeholder='{"revenue": 120000, "nps": 42, "gross_margin": 0.55}'></textarea>
+          </label>
+          <label class="field">
+            <span>Historical series JSON (optional — used by forecasting)</span>
+            <textarea id="reqSeries" rows="2" placeholder='{"revenue": [10,12,11,14,15,16,18,17,19,20,22,24]}'></textarea>
+          </label>
+          <div class="row">
+            <button class="btn primary" id="btnSubmit">Run workforce</button>
+            <span class="muted" id="submitStatus"></span>
+          </div>
+        </article>
+        <article class="card hidden" id="resultCard">
+          <h2>Result</h2>
+          <div id="resultMeta" class="meta-row"></div>
+          <pre class="code-block" id="resultBody"></pre>
+        </article>
+      </section>
+
+      <!-- Agents -->
+      <section class="view" id="view-agents">
+        <div class="grid cards-3" id="agentGrid"></div>
+      </section>
+
+      <!-- Tasks -->
+      <section class="view" id="view-tasks">
+        <article class="card">
+          <h2>Session tasks</h2>
+          <p class="muted">Tasks from this browser session. Connect a live API to persist across reloads.</p>
+          <div id="taskList" class="task-list"></div>
+        </article>
+      </section>
+
+      <!-- Diagnostics -->
+      <section class="view" id="view-diagnostics">
+        <article class="card">
+          <h2>Business health diagnostic</h2>
+          <p class="muted">Scores ten pillars from supplied metrics only. Missing data stays unscored.</p>
+          <label class="field">
+            <span>Metrics JSON</span>
+            <textarea id="diagMetrics" rows="4" placeholder='{"revenue": 120000, "sales_growth": 0.12, "nps": 42, "gross_margin": 0.55, "churn_rate": 0.04}'></textarea>
+          </label>
+          <button class="btn primary" id="btnDiag">Run diagnostic</button>
+          <pre class="code-block hidden" id="diagResult"></pre>
+        </article>
+      </section>
+
+      <!-- Forecasts -->
+      <section class="view" id="view-forecasts">
+        <article class="card">
+          <h2>Forecast</h2>
+          <p class="muted">Requires a numeric historical series. Always includes an uncertainty band — never presented as guaranteed.</p>
+          <label class="field">
+            <span>Metric name</span>
+            <input type="text" id="fcMetric" class="input" value="revenue" />
+          </label>
+          <label class="field">
+            <span>Historical series JSON</span>
+            <textarea id="fcSeries" rows="3" placeholder='{"revenue": [10,12,11,14,15,16,18,17,19,20,22,24]}'></textarea>
+          </label>
+          <label class="field">
+            <span>Horizon (months)</span>
+            <input type="number" id="fcHorizon" class="input" value="12" min="1" max="36" />
+          </label>
+          <button class="btn primary" id="btnForecast">Generate forecast</button>
+          <pre class="code-block hidden" id="fcResult"></pre>
+        </article>
+      </section>
+
+      <!-- Reports -->
+      <section class="view" id="view-reports">
+        <article class="card">
+          <h2>Reports</h2>
+          <p class="muted">
+            Report generation (Markdown, HTML, JSON; PDF/DOCX adapters ready) is available through the API
+            once a task has completed. Use a completed task synthesis as the section source.
+          </p>
+          <p class="muted">Wire <code>POST /bi/reports</code> when the API is running to export executive packs.</p>
+        </article>
+      </section>
+
+      <!-- Settings -->
+      <section class="view" id="view-settings">
+        <article class="card">
+          <h2>API connection</h2>
+          <p class="muted">
+            This Pages site is static. Point it at a running CINTEXA BI API (local, Railway, Fly, Render, etc.).
+          </p>
+          <label class="field">
+            <span>API base URL</span>
+            <input type="url" id="apiBase" class="input" placeholder="http://localhost:8000" value="" />
+          </label>
+          <button class="btn" id="btnSaveApi">Save</button>
+          <button class="btn ghost" id="btnPing">Ping /health</button>
+          <p class="muted small" id="settingsMsg"></p>
+        </article>
+        <article class="card">
+          <h2>Deploy notes</h2>
+          <ul class="clean">
+            <li>Cloudflare Pages hosts this UI only (static assets).</li>
+            <li>Run the FastAPI app separately: <code>uvicorn api.main:app --host 0.0.0.0 --port 8000</code></li>
+            <li>Set CORS on the API to include your Pages domain.</li>
+            <li>Paste the API base URL above so requests from this UI reach the workforce.</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

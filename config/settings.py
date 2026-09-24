@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     serper_api_key: str = ""
     tavily_api_key: str = ""
 
-    cors_origins: str = "http://localhost:3000,http://localhost:8000"
+    cors_origins: str = "http://localhost:3000,http://localhost:8000,https://cintexa-business-intelligence-agent-workforce.pages.dev"
     rate_limit_per_minute: int = 60
     organisation_isolation: bool = True
 

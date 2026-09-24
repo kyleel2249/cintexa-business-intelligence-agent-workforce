@@ -159,3 +159,45 @@ The event bus and standardised message protocol are ready for Marketing, Sales, 
 Built as the foundation for the wider CINTEXA agent workforce.
 
 Licence: MIT (see LICENSE).
+
+## Deployment
+
+### Cloudflare Pages (this UI)
+
+Cloudflare Pages serves **static files only**. It cannot run the Python FastAPI workers.
+
+1. Connect the GitHub repo to Cloudflare Pages.
+2. Build settings:
+   - **Framework preset:** None
+   - **Build command:** leave empty
+   - **Build output directory:** `/` (repo root hosts `index.html` + `assets/`)
+   - Or set output directory to `ui` if you prefer the `ui/` folder only.
+3. Deploy. You should see the CINTEXA executive workspace at your `*.pages.dev` URL.
+
+4. In **Settings** on the live site, set **API base URL** to wherever the FastAPI app is running (see below).
+
+### API (FastAPI) — separate host
+
+Run the workforce API on any Python host (Railway, Render, Fly.io, a VPS, or local):
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+# Set CORS_ORIGINS to include your Pages URL, e.g.
+# CORS_ORIGINS=https://cintexa-business-intelligence-agent-workforce.pages.dev,http://localhost:8000
+python -m database.init_db
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+API docs: `https://<your-api-host>/docs`
+
+Required request headers for BI routes:
+
+- `X-Organisation-Id`
+- `X-User-Id`
+
+### Why the 404 happened
+
+`*.pages.dev` was pointed at a Python-only repository with no static entrypoint. Pages looked for `index.html` (or a built SPA) and returned HTTP 404. The static UI is now at the repo root so a plain Pages deploy works.
+
+
