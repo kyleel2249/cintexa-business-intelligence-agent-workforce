@@ -311,6 +311,40 @@
     setTimeout(() => $("#apiKey").focus(), 50);
   }
 
+
+  function initMotion() {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const host = document.getElementById("particles");
+    if (host && !reduce) {
+      const n = Math.min(36, Math.floor(window.innerWidth / 40));
+      for (let i = 0; i < n; i++) {
+        const el = document.createElement("span");
+        el.className = "particle";
+        el.style.left = Math.random() * 100 + "%";
+        el.style.animationDuration = 8 + Math.random() * 14 + "s";
+        el.style.animationDelay = -Math.random() * 12 + "s";
+        el.style.width = el.style.height = 2 + Math.random() * 3 + "px";
+        el.style.opacity = String(0.3 + Math.random() * 0.5);
+        host.appendChild(el);
+      }
+    }
+    // Gentle parallax on the stage from pointer movement
+    if (!reduce) {
+      const stage = document.querySelector(".stage");
+      window.addEventListener(
+        "pointermove",
+        (e) => {
+          if (!stage) return;
+          const x = (e.clientX / window.innerWidth - 0.5) * 12;
+          const y = (e.clientY / window.innerHeight - 0.5) * 10;
+          stage.style.transform =
+            "translate3d(" + x * 0.4 + "px," + y * 0.35 + "px,0) rotateY(" + x * 0.15 + "deg) rotateX(" + -y * 0.12 + "deg)";
+        },
+        { passive: true }
+      );
+    }
+  }
+
   function bind() {
     $("#composer").addEventListener("submit", (e) => {
       e.preventDefault();
@@ -356,6 +390,7 @@
     updateSendState();
     updateKeyBadge();
     ping();
+    initMotion();
   }
 
   bind();

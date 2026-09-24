@@ -11,6 +11,16 @@
   <link rel="stylesheet" href="assets/chat.css" />
 </head>
 <body>
+  <!-- Living 3D backdrop -->
+  <div class="stage" aria-hidden="true">
+    <div class="stage-gradient"></div>
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="orb orb-c"></div>
+    <div class="grid-floor"></div>
+    <div class="particles" id="particles"></div>
+  </div>
+
   <div class="shell">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
@@ -70,7 +80,7 @@
       </label>
       <p class="hint">
         Paste your <strong>OpenAI</strong> key (recommended) or an <strong>Anthropic</strong> key starting with <code>sk-ant-</code>.
-        The key is stored only in this browser’s session storage and sent as header <code>X-LLM-Api-Key</code>. It is never shown in responses.
+        Stored only in session storage; sent as <code>X-LLM-Api-Key</code>. Never shown in replies.
       </p>
       <div class="modal-actions">
         <button type="button" class="btn" id="btnSaveSettings">Save</button>
