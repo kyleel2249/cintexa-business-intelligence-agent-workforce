@@ -148,6 +148,29 @@
     });
   }
 
+
+  function scrollToBottom(force) {
+    const el = $("#messages");
+    if (!el) return;
+    const run = function () {
+      el.scrollTop = el.scrollHeight;
+      const last = el.lastElementChild;
+      if (last && typeof last.scrollIntoView === "function") {
+        try {
+          last.scrollIntoView({ block: "end", behavior: force ? "auto" : "smooth" });
+        } catch (e) {
+          el.scrollTop = el.scrollHeight;
+        }
+      }
+    };
+    run();
+    requestAnimationFrame(function () {
+      run();
+      setTimeout(run, 40);
+      setTimeout(run, 120);
+    });
+  }
+
   function appendMessage(role, content, meta) {
     const welcome = $("#welcome");
     if (welcome) welcome.remove();
@@ -166,7 +189,7 @@
     row.appendChild(avatar);
     row.appendChild(bubble);
     $("#messages").appendChild(row);
-    $("#messages").scrollTop = $("#messages").scrollHeight;
+    scrollToBottom();
   }
 
   function showTyping() {
@@ -176,7 +199,7 @@
     row.innerHTML =
       '<div class="avatar">C</div><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
     $("#messages").appendChild(row);
-    $("#messages").scrollTop = $("#messages").scrollHeight;
+    scrollToBottom(true);
   }
 
   function hideTyping() {

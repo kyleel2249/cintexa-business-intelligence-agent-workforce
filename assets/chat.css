@@ -241,8 +241,12 @@ body {
 }
 
 .chat-pane {
-  display: flex; flex-direction: column;
-  min-width: 0; height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   animation: fadeInPane 0.8s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes fadeInPane {
