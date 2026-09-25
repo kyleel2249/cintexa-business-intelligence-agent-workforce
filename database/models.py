@@ -232,3 +232,54 @@ class EventRecord(Base):
     event_type = Column(String(128), nullable=False, index=True)
     payload = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Workforce Orchestrator persistence ──────────────────────────
+
+class MissionRecord(Base):
+    __tablename__ = "missions"
+    mission_id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    workspace_id = Column(String(64), default="default-workspace", index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    objective = Column(Text, default="")
+    original_request = Column(Text, default="")
+    status = Column(String(32), default="CREATED", index=True)
+    priority = Column(String(16), default="NORMAL")
+    business_domain = Column(String(64), default="general")
+    plan_version = Column(Integer, default=0)
+    confidence = Column(Float, default=0.0)
+    quality_score = Column(Float, default=0.0)
+    idempotency_key = Column(String(128), nullable=True, index=True)
+    payload = Column(JSON, default=dict)  # full mission dump
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_missions_org_status", "organisation_id", "status"),
+    )
+
+
+class MissionEventRecord(Base):
+    __tablename__ = "mission_events"
+    event_id = Column(String(64), primary_key=True)
+    mission_id = Column(String(64), nullable=False, index=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    payload = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OrchestrationDecisionRecord(Base):
+    __tablename__ = "orchestration_decisions"
+    decision_id = Column(String(64), primary_key=True)
+    mission_id = Column(String(64), nullable=False, index=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    decision_type = Column(String(64), nullable=False)
+    decision = Column(Text, default="")
+    reason = Column(Text, default="")
+    selected_option = Column(String(255), default="")
+    confidence = Column(Float, default=0.0)
+    payload = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)

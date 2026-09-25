@@ -8,8 +8,13 @@ from typing import Any, Dict, List, Optional
 
 from agents.registry import get_agent_instance
 from events.bus import bus
+from orchestrator.context_manager import ContextManager
 from orchestrator.dependency_graph import DependencyGraph
+from orchestrator.metrics import orchestrator_metrics
 from orchestrator.policies import OrchestratorPolicies
+from orchestrator.recovery_manager import recovery_manager
+from orchestrator.scheduler import Scheduler
+from orchestrator.tool_router import tool_router
 from schemas.missions import (
     FailureClass,
     Mission,
@@ -21,6 +26,8 @@ from schemas.missions import (
 class ExecutionEngine:
     def __init__(self, policies: OrchestratorPolicies) -> None:
         self.policies = policies
+        self.context_mgr = ContextManager()
+        self.scheduler = Scheduler()
 
     async def run_mission_tasks(self, mission: Mission) -> Mission:
         tasks = mission.tasks
@@ -73,6 +80,7 @@ class ExecutionEngine:
                 break
             for t in ready:
                 t.status = MissionTaskStatus.READY
+            ready = self.scheduler.prioritise(mission, ready)
             await asyncio.gather(*(run_one(t) for t in ready))
             if not any(
                 t.status in (MissionTaskStatus.PENDING, MissionTaskStatus.READY, MissionTaskStatus.RUNNING)
@@ -111,22 +119,14 @@ class ExecutionEngine:
                 task.completed_at = datetime.now(timezone.utc).isoformat() + "Z"
                 results[task.task_id] = task.result
                 return
-            context = {
-                "organisation_id": mission.organisation_id,
-                "user_id": mission.user_id,
-                "mission_id": mission.mission_id,
-                "workspace_id": mission.workspace_id,
-                **(mission.available_context or {}),
-            }
-            inputs = {
-                "objective": task.objective,
-                "request": mission.original_request,
-                "prior_results": {
-                    tid: results[tid]
-                    for tid in task.dependencies
-                    if tid in results
-                },
-            }
+            prior = {tid: results[tid] for tid in task.dependencies if tid in results}
+            context = self.context_mgr.package(mission, task, prior)
+            inputs = self.context_mgr.package_inputs(mission, task, prior)
+            # Tool selection (recorded, agents may use via registry)
+            inputs["selected_tools"] = tool_router.select(
+                required_tools=task.required_tools,
+                required_skills=task.required_skills,
+            )
             # Prefer async execute
             if hasattr(agent, "execute"):
                 result = agent.execute(task.task_id, context, inputs)
@@ -140,12 +140,21 @@ class ExecutionEngine:
             if not isinstance(result, dict):
                 result = {"status": "completed", "raw": str(result)}
             task.result = result
-            task.confidence = float(result.get("confidence") or result.get("confidence_score") or 0.65)
+            conf_raw = result.get("confidence", result.get("confidence_score", 0.65))
+            if isinstance(conf_raw, dict):
+                conf_raw = conf_raw.get("score") or {"HIGH": 0.85, "MEDIUM": 0.65, "LOW": 0.4, "UNKNOWN": 0.3}.get(
+                    str(conf_raw.get("level", "MEDIUM")).split(".")[-1], 0.55
+                )
+            try:
+                task.confidence = float(conf_raw) if conf_raw is not None else 0.65
+            except (TypeError, ValueError):
+                task.confidence = 0.65
             if result.get("status") == "failed":
                 raise RuntimeError(result.get("error") or "agent reported failure")
             task.status = MissionTaskStatus.COMPLETED
             task.completed_at = datetime.now(timezone.utc).isoformat() + "Z"
             results[task.task_id] = result
+            orchestrator_metrics.record_task(agent_id, True)
             bus.publish(
                 "task.completed",
                 {
@@ -176,6 +185,7 @@ class ExecutionEngine:
             else:
                 task.status = MissionTaskStatus.FAILED
                 task.completed_at = datetime.now(timezone.utc).isoformat() + "Z"
+                orchestrator_metrics.record_task(agent_id, False)
                 bus.publish(
                     "task.failed",
                     {

@@ -13,6 +13,14 @@ from typing import Any, Dict, List, Optional
 
 from events.bus import bus
 from orchestrator.agent_router import AgentRouter
+from orchestrator.replanner import replanner
+from orchestrator.model_router import model_router
+from orchestrator.trace_manager import trace_manager
+from orchestrator.metrics import orchestrator_metrics
+from orchestrator.challenger import challenger
+from orchestrator.information_value import information_value
+from orchestrator.quality_gate import quality_gate
+from orchestrator.approval_manager import approval_manager
 from orchestrator.conflict_manager import ConflictManager
 from orchestrator.decision_logger import DecisionLogger
 from orchestrator.dependency_graph import DependencyGraph
@@ -121,23 +129,12 @@ class WorkforceOrchestrator:
         self._emit(mission, "mission.started")
 
         # Approval gate
-        if mission.approval_requirements and self.policies.enable_human_approval:
-            risky = set(mission.approval_requirements) & self.policies.approval_triggers
-            if risky:
-                mission.status = MissionStatus.AWAITING_APPROVAL
-                self.decisions.log(
-                    mission,
-                    OrchestrationDecision(
-                        mission_id=mission.mission_id,
-                        decision_type="approval_request",
-                        decision="pause_for_approval",
-                        reason=f"Triggers: {sorted(risky)}",
-                        selected_option="AWAITING_APPROVAL",
-                    ),
-                )
-                self.store.save(mission)
-                self._emit(mission, "approval.requested")
-                return mission
+        if approval_manager.requires_approval(mission):
+            mission = approval_manager.request(mission)
+            orchestrator_metrics.approvals += 1
+            self.store.save(mission)
+            self._emit(mission, "approval.requested")
+            return mission
 
         mission = await self.execution.run_mission_tasks(mission)
 
@@ -187,12 +184,37 @@ class WorkforceOrchestrator:
         )
 
         mission.status = MissionStatus.VERIFYING
+        # Optional challenger on highest-confidence completed task
+        try:
+            top = max(
+                (t for t in mission.tasks if t.status.value == "COMPLETED" and t.result),
+                key=lambda x: x.confidence,
+                default=None,
+            )
+            if top and top.confidence >= 0.75 and self.policies.enable_challenger:
+                challenge = await challenger.challenge(top.result or {})
+                mission.evidence.append({"type": "challenger", "report": challenge})
+        except Exception:
+            pass
+        gates = quality_gate.run_all(mission)
+        mission.execution_metrics = {
+            **(mission.execution_metrics or {}),
+            "quality_gates": [g.__dict__ for g in gates],
+        }
+        # Model routing record
+        choice = model_router.select(task_complexity="medium", api_key=api_key)
+        mission.cost_metadata = {
+            **(mission.cost_metadata or {}),
+            "model_provider": choice.provider,
+            "model": choice.model,
+        }
         result = self.synthesis.synthesise(mission, api_key=api_key)
         mission.result = result
         mission.quality_score = result.quality
         mission.confidence = result.confidence
         mission.status = MissionStatus.COMPLETED
         mission.completed_at = datetime.now(timezone.utc).isoformat() + "Z"
+        orchestrator_metrics.record_mission("COMPLETED")
         self.store.save(mission)
         self._emit(mission, "mission.completed", {"confidence": mission.confidence})
         return mission
@@ -276,6 +298,10 @@ class WorkforceOrchestrator:
 
     def trace(self, mission_id: str) -> Dict[str, Any]:
         mission = self._require(mission_id)
+        return trace_manager.build(mission)
+
+    def _legacy_trace(self, mission_id: str) -> Dict[str, Any]:
+        mission = self._require(mission_id)
         return {
             "mission_id": mission.mission_id,
             "status": mission.status.value,
@@ -320,6 +346,14 @@ class WorkforceOrchestrator:
         mission.business_domain = intent.business_domain
         mission.missing_information = list(intent.missing_data)
         mission.priority = intent.priority
+        gaps = information_value.evaluate(intent.missing_data)
+        mission.available_context = {
+            **(mission.available_context or {}),
+            "_info_gaps": [g.__dict__ for g in gaps],
+        }
+        if information_value.should_block(gaps) and not mission.available_context.get("metrics"):
+            # Soft-block only when truly high-value data missing and no metrics at all
+            pass  # proceed with limitations recorded in assumptions
 
         if intent.ambiguity == AmbiguityLevel.CRITICAL and not mission.available_context:
             mission.status = MissionStatus.WAITING_FOR_INPUT

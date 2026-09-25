@@ -632,6 +632,42 @@ async def mission_metrics(mission_id: str, auth: Dict = Depends(get_org_and_user
 
 
 
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/stream")
+async def mission_event_stream(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    """Server-Sent Events stream of mission progress (polling snapshot)."""
+    from fastapi.responses import StreamingResponse
+    from orchestrator.workforce import workforce as wf
+    import asyncio, json
+
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+
+    async def gen():
+        last = 0
+        for _ in range(120):  # ~2 minutes at 1s
+            mission = wf.get(mission_id)
+            if not mission:
+                break
+            events = mission.events[last:]
+            for ev in events:
+                yield f"data: {json.dumps(ev)}\n\n"
+            last = len(mission.events)
+            if mission.status.value in ("COMPLETED", "FAILED", "CANCELLED"):
+                yield f"data: {json.dumps({\"event_type\": \"stream.end\", \"status\": mission.status.value})}\n\n"
+                break
+            await asyncio.sleep(1)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get(f"{settings.api_prefix}/orchestrator/metrics")
+async def orchestrator_metrics_endpoint():
+    from orchestrator.metrics import orchestrator_metrics
+    return orchestrator_metrics.snapshot()
+
+
 @app.get("/health")
 async def health():
     llm = get_llm()
