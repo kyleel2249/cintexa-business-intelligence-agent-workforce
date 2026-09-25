@@ -1,6 +1,6 @@
 """Event bus — allows future CINTEXA departments to subscribe."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List
 
 from schemas.common import new_id
@@ -48,7 +48,7 @@ class EventBus:
             "event_type": event_type,
             "organisation_id": organisation_id,
             "payload": payload,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         self._history.append(event)
         for handler in self._subscribers.get(event_type, []):

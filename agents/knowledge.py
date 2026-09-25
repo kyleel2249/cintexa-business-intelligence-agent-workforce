@@ -1,6 +1,6 @@
 """Knowledge Manager Agent — structured knowledge with versioning and stale detection."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from agents.base import BaseAgent
@@ -76,8 +76,8 @@ class KnowledgeManagerAgent(BaseAgent):
             "owner": inputs.get("owner", "system"),
             "confidence": inputs.get("confidence", 0.7),
             "version": 1,
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             "review_date": inputs.get("review_date"),
             "permissions": inputs.get("permissions", ["org_read"]),
             "tags": inputs.get("tags", []),
@@ -98,7 +98,7 @@ class KnowledgeManagerAgent(BaseAgent):
 
     def _flag_stale(self, org_id: str) -> List[Dict[str, Any]]:
         stale = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for item in self._store.values():
             if item.get("organisation_id") != org_id:
                 continue

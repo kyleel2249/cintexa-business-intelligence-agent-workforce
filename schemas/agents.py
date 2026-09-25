@@ -1,6 +1,6 @@
 """Agent identity, capabilities, permissions and message protocol."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -59,7 +59,7 @@ class AgentMessage(BaseModel):
     evidence_ids: List[str] = Field(default_factory=list)
     confidence: Optional[ConfidenceInfo] = None
     requires_response: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class AgentRunRecord(BaseModel):
@@ -83,7 +83,7 @@ class AgentActivityLog(BaseModel):
     log_id: str = Field(default_factory=lambda: new_id("LOG-"))
     agent: str
     task: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     input: Optional[Dict[str, Any]] = None
     tools_used: List[str] = Field(default_factory=list)
     output: Optional[Dict[str, Any]] = None

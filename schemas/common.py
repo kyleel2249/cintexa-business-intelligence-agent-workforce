@@ -1,6 +1,6 @@
 """Shared enums and base models for CINTEXA BI."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -83,7 +83,7 @@ class Priority(str, Enum):
 
 
 class TimestampedModel(BaseModel):
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
 

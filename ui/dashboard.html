@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>CINTEXA — Executive Dashboard</title>
+  <meta name="description" content="CINTEXA BI Agent Workforce — executive workspace: agents, tasks, diagnostics, forecasts, reports" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/dashboard.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">C</span>
+        <div>
+          <strong>CINTEXA</strong>
+          <div class="brand-sub">Executive workspace</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button type="button" class="nav-item active" data-view="overview">Overview</button>
+        <button type="button" class="nav-item" data-view="request">New request</button>
+        <button type="button" class="nav-item" data-view="agents">Agents</button>
+        <button type="button" class="nav-item" data-view="tasks">Tasks</button>
+        <button type="button" class="nav-item" data-view="diagnostics">Diagnostics</button>
+        <button type="button" class="nav-item" data-view="forecasts">Forecasts</button>
+        <button type="button" class="nav-item" data-view="reports">Reports</button>
+        <button type="button" class="nav-item" data-view="settings">Settings</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <span class="status-pill" id="apiStatus">Checking…</span>
+        <div class="field">
+          <span>Organisation ID</span>
+          <input class="input sm" id="orgId" placeholder="demo-org" value="demo-org" />
+        </div>
+        <div class="field">
+          <span>User ID</span>
+          <input class="input sm" id="userId" placeholder="demo-user" value="demo-user" />
+        </div>
+        <a class="btn ghost small" href="index.html" style="display:inline-block;text-align:center;text-decoration:none;">Open chat →</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="viewTitle">Overview</h1>
+        <div class="topbar-actions">
+          <span class="chip">Tasks this session: <span id="taskCount">0</span></span>
+          <span class="chip">Agents online: <span id="agentCount">12</span></span>
+        </div>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section class="view active" id="view-overview">
+        <div class="grid cards-4">
+          <div class="card metric">
+            <span class="label">Business health score</span>
+            <span class="value" id="healthScore">—</span>
+            <span class="hint">Run a diagnostic to populate</span>
+          </div>
+          <div class="card metric">
+            <span class="label">Specialist agents</span>
+            <span class="value">12</span>
+            <span class="hint">Strategy → Quality Assurance</span>
+          </div>
+          <div class="card metric">
+            <span class="label">Tasks this session</span>
+            <span class="value" id="taskCountCard">0</span>
+            <span class="hint">Stored locally in this browser</span>
+          </div>
+          <div class="card metric">
+            <span class="label">API connection</span>
+            <span class="value" id="apiStatusCard">—</span>
+            <span class="hint">Set the API base URL in Settings</span>
+          </div>
+        </div>
+
+        <div class="grid two" style="margin-top:1rem;">
+          <div class="card">
+            <h2>Quick start scenarios</h2>
+            <p class="muted small">Pick a demonstration scenario — it's dropped straight into the request form.</p>
+            <div class="scenario-list" id="scenarioList"></div>
+          </div>
+          <div class="card">
+            <h2>Jump to</h2>
+            <div class="row">
+              <button type="button" class="btn" data-goto="request">New request</button>
+              <button type="button" class="btn" data-goto="diagnostics">Run diagnostic</button>
+              <button type="button" class="btn" data-goto="forecasts">Run forecast</button>
+              <button type="button" class="btn" data-goto="agents">View agents</button>
+              <button type="button" class="btn" data-goto="reports">Generate report</button>
+            </div>
+            <p class="muted small" style="margin-top:0.85rem;">
+              CINTEXA specialists never invent market statistics, competitor figures or citations.
+              Every significant claim carries evidence IDs, confidence classification and source metadata,
+              and every response passes through the Quality Assurance agent before it reaches you.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- NEW REQUEST -->
+      <section class="view" id="view-request">
+        <div class="card">
+          <h2>Submit a business request</h2>
+          <label class="field">
+            <span>Request</span>
+            <textarea id="requestText" rows="3" placeholder="e.g. Assess my business health and suggest priorities"></textarea>
+          </label>
+          <div class="grid two">
+            <label class="field">
+              <span>Industry (optional)</span>
+              <input class="input" id="reqIndustry" placeholder="e.g. SaaS, retail, logistics" />
+            </label>
+            <label class="field">
+              <span>Geography (optional)</span>
+              <input class="input" id="reqGeo" placeholder="e.g. UK, EU, global" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Metrics JSON (optional)</span>
+            <textarea id="reqMetrics" rows="3" placeholder='{"revenue": 100000, "expenses": 80000, "churn_rate": 0.05}'></textarea>
+          </label>
+          <label class="field">
+            <span>Historical series JSON (optional — for forecasting requests)</span>
+            <textarea id="reqSeries" rows="3" placeholder='{"revenue": [10000, 10500, 11200]}'></textarea>
+          </label>
+          <div class="row">
+            <button type="button" class="btn primary" id="btnSubmit">Run request</button>
+            <span class="muted small" id="submitStatus"></span>
+          </div>
+        </div>
+
+        <div class="card hidden" id="resultCard" style="margin-top:1rem;">
+          <h2>Result</h2>
+          <div class="meta-row" id="resultMeta"></div>
+          <pre class="code-block" id="resultBody"></pre>
+        </div>
+      </section>
+
+      <!-- AGENTS -->
+      <section class="view" id="view-agents">
+        <div class="card">
+          <h2>The twelve specialist agents</h2>
+          <p class="muted small">Managed by the Orchestrator. Selection, sequencing and QA are automatic.</p>
+        </div>
+        <div class="grid cards-3" id="agentGrid" style="margin-top:1rem;"></div>
+      </section>
+
+      <!-- TASKS -->
+      <section class="view" id="view-tasks">
+        <div class="card">
+          <h2>Recent tasks (this browser session)</h2>
+          <div class="task-list" id="taskList"></div>
+        </div>
+      </section>
+
+      <!-- DIAGNOSTICS -->
+      <section class="view" id="view-diagnostics">
+        <div class="card">
+          <h2>Business Health Diagnostic</h2>
+          <p class="muted small">Scores up to 10 configurable pillars from whatever metrics you supply. Pillars without data stay unscored rather than guessed.</p>
+          <label class="field">
+            <span>Metrics JSON</span>
+            <textarea id="diagMetrics" rows="4" placeholder='{"revenue": 100000, "expenses": 80000, "churn_rate": 0.05}'></textarea>
+          </label>
+          <div class="row">
+            <button type="button" class="btn primary" id="btnDiag">Run diagnostic</button>
+          </div>
+        </div>
+        <pre class="code-block hidden" id="diagResult" style="margin-top:1rem;"></pre>
+      </section>
+
+      <!-- FORECASTS -->
+      <section class="view" id="view-forecasts">
+        <div class="card">
+          <h2>Forecast</h2>
+          <p class="muted small">Data-supported forecasts with explicit uncertainty ranges — never a bare point estimate.</p>
+          <div class="grid two">
+            <label class="field">
+              <span>Metric name</span>
+              <input class="input" id="fcMetric" placeholder="revenue" value="revenue" />
+            </label>
+            <label class="field">
+              <span>Horizon (months)</span>
+              <input class="input" id="fcHorizon" type="number" min="1" max="36" value="12" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Historical series JSON</span>
+            <textarea id="fcSeries" rows="3" placeholder='{"revenue": [10000, 10500, 11200, 11800]}'></textarea>
+          </label>
+          <div class="row">
+            <button type="button" class="btn primary" id="btnForecast">Run forecast</button>
+          </div>
+        </div>
+        <pre class="code-block hidden" id="fcResult" style="margin-top:1rem;"></pre>
+      </section>
+
+      <!-- REPORTS -->
+      <section class="view" id="view-reports">
+        <div class="card">
+          <h2>Generate a report</h2>
+          <p class="muted small">Turns a completed task's synthesis into a Markdown, HTML or JSON report via <code>POST /bi/reports</code>.</p>
+          <div class="grid two">
+            <label class="field">
+              <span>Task ID</span>
+              <input class="input" id="reportTaskId" placeholder="TASK-…  (leave blank to use the most recent task)" />
+            </label>
+            <label class="field">
+              <span>Format</span>
+              <select class="input" id="reportFormat">
+                <option value="markdown" selected>Markdown</option>
+                <option value="html">HTML</option>
+                <option value="json">JSON</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <button type="button" class="btn primary" id="btnGenerateReport">Generate report</button>
+            <span class="muted small" id="reportStatus"></span>
+          </div>
+        </div>
+        <pre class="code-block hidden" id="reportResult" style="margin-top:1rem;"></pre>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <div class="card">
+          <h2>Connection</h2>
+          <label class="field">
+            <span>API base URL</span>
+            <input class="input" id="apiBase" placeholder="https://your-cintexa-api.example.com" />
+          </label>
+          <div class="row">
+            <button type="button" class="btn primary" id="btnSaveApi">Save</button>
+            <button type="button" class="btn ghost" id="btnPing">Test connection</button>
+            <span class="muted small" id="settingsMsg"></span>
+          </div>
+          <p class="muted small" style="margin-top:0.75rem;">
+            Requests are sent with <code>X-Organisation-Id</code> and <code>X-User-Id</code> headers (set in the sidebar).
+            No credentials are stored anywhere except this browser's local storage.
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

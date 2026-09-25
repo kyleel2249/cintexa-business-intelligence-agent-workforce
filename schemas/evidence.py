@@ -1,9 +1,9 @@
 """Shared Evidence System — every claim references an evidence object."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from schemas.common import Classification, ConfidenceLevel, SourceQuality, new_id
 
@@ -24,11 +24,10 @@ class EvidenceCreate(BaseModel):
 
 class Evidence(EvidenceCreate):
     evidence_id: str = Field(default_factory=lambda: new_id("EV-"))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EvidenceBundle(BaseModel):

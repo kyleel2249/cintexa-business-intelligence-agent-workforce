@@ -7,15 +7,17 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agents.registry import list_agents, get_agent, agent_ids
 from config.settings import get_settings
+from events.bus import bus
 from orchestrator.core import Orchestrator
 from schemas.common import Priority, TaskState
 from schemas.tasks import TaskCreate, Task
+from reports.generator import generate_html_report, generate_json_report, generate_markdown_report
 
 
 settings = get_settings()
@@ -294,6 +296,83 @@ async def dashboard(auth: Dict = Depends(get_org_and_user)):
     }
 
 
+# --- Reports ---
+class ReportRequest(BaseModel):
+    task_id: Optional[str] = None
+    title: str = "CINTEXA Business Intelligence Report"
+    report_type: str = "management"
+    format: str = "markdown"  # markdown | html | json
+    sections: Optional[Dict[str, Any]] = None
+
+
+@app.post(f"{settings.api_prefix}/reports")
+async def create_report(body: ReportRequest, auth: Dict = Depends(get_org_and_user)):
+    sections = body.sections
+    if sections is None:
+        if not body.task_id:
+            raise HTTPException(400, "Provide either 'task_id' (to report on a completed task) or 'sections'.")
+        task = orchestrator.get_task(body.task_id)
+        if not task or task.organisation_id != auth["organisation_id"]:
+            raise HTTPException(404, "Task not found")
+        synthesis = task.results.get("synthesis") or {}
+        sections = synthesis if isinstance(synthesis, dict) else {"executive_summary": str(synthesis)}
+
+    fmt = (body.format or "markdown").lower()
+    if fmt == "json":
+        return generate_json_report(body.title, sections, body.report_type)
+    if fmt == "html":
+        html = generate_html_report(body.title, sections, body.report_type)
+        return Response(content=html, media_type="text/html")
+    markdown_report = generate_markdown_report(body.title, sections, body.report_type)
+    return {
+        "title": body.title,
+        "report_type": body.report_type,
+        "format": "markdown",
+        "content": markdown_report,
+    }
+
+
+@app.get(f"{settings.api_prefix}/reports/{{task_id}}")
+async def get_report_for_task(
+    task_id: str,
+    format: str = "markdown",
+    auth: Dict = Depends(get_org_and_user),
+):
+    task = orchestrator.get_task(task_id)
+    if not task or task.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Task not found")
+    synthesis = task.results.get("synthesis") or {}
+    sections = synthesis if isinstance(synthesis, dict) else {"executive_summary": str(synthesis)}
+    title = f"Business Intelligence Report — {task.objective or task.request}"
+
+    fmt = (format or "markdown").lower()
+    if fmt == "json":
+        return generate_json_report(title, sections, "management")
+    if fmt == "html":
+        html = generate_html_report(title, sections, "management")
+        return Response(content=html, media_type="text/html")
+    return {
+        "title": title,
+        "format": "markdown",
+        "content": generate_markdown_report(title, sections, "management"),
+    }
+
+
+# --- Events ---
+@app.get(f"{settings.api_prefix}/events")
+async def get_events(
+    event_type: Optional[str] = None,
+    limit: int = 50,
+    auth: Dict = Depends(get_org_and_user),
+):
+    """Lifecycle event stream (diagnostic/research/competitor/QA started+completed,
+    forecast.created, agent.failed) published on the internal event bus, scoped to
+    the caller's organisation."""
+    events = bus.history(event_type=event_type, limit=max(limit, 1) * 4)
+    scoped = [e for e in events if e.get("organisation_id") == auth["organisation_id"]]
+    return scoped[-limit:]
+
+
 # --- Agents ---
 @app.get(f"{settings.api_prefix}/agents")
 async def get_agents():
@@ -422,4 +501,13 @@ async def spa_ui():
     if index.is_file():
         return FileResponse(index)
     raise HTTPException(404, "UI not found")
+
+
+@app.get("/dashboard")
+async def spa_dashboard():
+    """Serve the executive workspace dashboard (agents, tasks, diagnostics, forecasts, reports)."""
+    page = _ROOT / "dashboard.html"
+    if page.is_file():
+        return FileResponse(page)
+    raise HTTPException(404, "Dashboard not found")
 

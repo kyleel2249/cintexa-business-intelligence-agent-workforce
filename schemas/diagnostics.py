@@ -1,6 +1,6 @@
 """Business Diagnostic Framework — configurable pillars and Health Score."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -65,7 +65,7 @@ class BusinessHealthReport(BaseModel):
         "documented evidence. Pillars without data are scored as UNKNOWN and "
         "excluded from the overall average unless an explicit estimate is supplied."
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     task_id: Optional[str] = None
 
     def compute_overall(self) -> None:

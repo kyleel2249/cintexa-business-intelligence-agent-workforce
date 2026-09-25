@@ -1,3 +1,7 @@
+/* NOTE: superseded by chat.css (used by index.html) for the chat UI, and by dashboard.css
+   (used by dashboard.html) for the executive workspace. Kept for backward compatibility —
+   do not delete; nothing currently links to this file directly. */
+
 :root {
   --bg: #0d0f14;
   --sidebar: #11141b;

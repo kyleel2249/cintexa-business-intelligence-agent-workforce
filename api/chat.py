@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -17,7 +17,7 @@ from tools.llm import get_llm
 class ChatMessage(BaseModel):
     role: str  # user | assistant | system
     content: str
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
     task_id: Optional[str] = None
     meta: Dict[str, Any] = Field(default_factory=dict)
 
@@ -28,8 +28,8 @@ class ChatSession(BaseModel):
     user_id: str
     title: str = "New chat"
     messages: List[ChatMessage] = Field(default_factory=list)
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
-    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
 
 
 class ChatRequest(BaseModel):
@@ -154,7 +154,7 @@ class ChatService:
             },
         )
         session.messages.append(assistant_msg)
-        session.updated_at = datetime.utcnow().isoformat() + "Z"
+        session.updated_at = datetime.now(timezone.utc).isoformat() + "Z"
         if session.title == "New chat" and req.message:
             session.title = req.message[:48] + ("…" if len(req.message) > 48 else "")
 

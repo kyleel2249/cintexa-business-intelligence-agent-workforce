@@ -1,12 +1,23 @@
 """CINTEXA BI Orchestrator — manager of the Business Intelligence workforce."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from agents.registry import get_agent, list_agents
+from events.bus import bus
 from orchestrator.planner import build_task_plan
 from schemas.common import TaskState
 from schemas.tasks import Task, TaskCreate, TaskPlan
+
+# agent_id -> event-name prefix, for lifecycle events published on the shared bus.
+# Agents without a dedicated prefix here simply don't get .started/.completed events,
+# but every agent still gets "agent.failed" on exception.
+_AGENT_EVENT_PREFIX = {
+    "diagnostic": "diagnostic",
+    "research": "research",
+    "competitor": "competitor.research",
+    "quality": "qa",
+}
 
 
 class Orchestrator:
@@ -49,12 +60,12 @@ class Orchestrator:
     def update_state(self, task_id: str, state: TaskState, **kwargs) -> Task:
         task = self._tasks[task_id]
         task.state = state
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc)
         for k, v in kwargs.items():
             if hasattr(task, k):
                 setattr(task, k, v)
         if state == TaskState.COMPLETED:
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
         return task
 
     async def run(self, task_id: str) -> Task:
@@ -145,11 +156,23 @@ class Orchestrator:
             "objective": task.objective,
             **task.context,
         }
+        event_prefix = _AGENT_EVENT_PREFIX.get(agent_id)
+        if event_prefix:
+            bus.publish(f"{event_prefix}.started", {"task_id": task.task_id, "agent_id": agent_id}, task.organisation_id)
         try:
             result = await instance.execute(task.task_id, context, inputs)
+            if event_prefix:
+                bus.publish(f"{event_prefix}.completed", {"task_id": task.task_id, "agent_id": agent_id}, task.organisation_id)
+            elif agent_id == "forecasting":
+                bus.publish("forecast.created", {"task_id": task.task_id}, task.organisation_id)
             return result
         except Exception as exc:
             task.errors.append(f"{agent_id} failed: {exc}")
+            bus.publish(
+                "agent.failed",
+                {"task_id": task.task_id, "agent_id": agent_id, "error": str(exc)},
+                task.organisation_id,
+            )
             return {"status": "failed", "error": str(exc)}
 
     def _load_agent(self, agent_id: str):

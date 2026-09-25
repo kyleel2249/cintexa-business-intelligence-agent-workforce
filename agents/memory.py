@@ -1,6 +1,6 @@
 """Memory Agent — separated short-term, working, long-term, user-provided, derived."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from agents.base import BaseAgent
@@ -101,7 +101,7 @@ class MemoryAgent(BaseAgent):
             "task_id": context.get("task_id"),
             "permissions": inputs.get("permissions", ["org_read"]),
             "version": 1,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "source_linked": inputs.get("source_linked", True),
             "deletable": True,
         }

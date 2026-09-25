@@ -1,7 +1,7 @@
 """Base agent interface — all specialists inherit from this."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from schemas.agents import AgentMessage, AgentProfile, AgentRunRecord
@@ -44,7 +44,7 @@ class BaseAgent(ABC):
             task_id=task_id,
             status=TaskState.RUNNING,
             input_summary=input_summary,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
         )
         return self._run
 
@@ -55,6 +55,7 @@ class BaseAgent(ABC):
         evidence_ids: Optional[List[str]] = None,
         errors: Optional[List[str]] = None,
         tools_used: Optional[List[str]] = None,
+        qa_result: Optional[str] = None,
     ) -> AgentRunRecord:
         if self._run is None:
             raise RuntimeError("No active run")
@@ -63,7 +64,9 @@ class BaseAgent(ABC):
         self._run.evidence_ids = evidence_ids or []
         self._run.errors = errors or []
         self._run.tools_used = tools_used or self._run.tools_used
-        self._run.completed_at = datetime.utcnow()
+        if qa_result is not None:
+            self._run.qa_result = qa_result
+        self._run.completed_at = datetime.now(timezone.utc)
         if self._run.started_at:
             delta = self._run.completed_at - self._run.started_at
             self._run.duration_ms = int(delta.total_seconds() * 1000)

@@ -79,7 +79,10 @@
     list.unshift(task);
     localStorage.setItem(TASKS_KEY, JSON.stringify(list.slice(0, 30)));
     renderTasks();
-    $("#taskCount").textContent = String(loadTasks().length);
+    const count = String(loadTasks().length);
+    $("#taskCount").textContent = count;
+    const cardCount = $("#taskCountCard");
+    if (cardCount) cardCount.textContent = count;
   }
 
   function showView(name) {
@@ -148,10 +151,12 @@
 
   async function pingApi() {
     const status = $("#apiStatus");
+    const statusCard = $("#apiStatusCard");
     const base = getApiBase();
     if (!base) {
       status.textContent = "API: not configured";
       status.className = "status-pill err";
+      if (statusCard) statusCard.textContent = "Not configured";
       return;
     }
     try {
@@ -160,10 +165,12 @@
       const data = await res.json();
       status.textContent = "API: " + (data.status || "ok");
       status.className = "status-pill ok";
+      if (statusCard) statusCard.textContent = "Connected";
       if (data.agents) $("#agentCount").textContent = String(data.agents.length);
     } catch (e) {
       status.textContent = "API: unreachable";
       status.className = "status-pill err";
+      if (statusCard) statusCard.textContent = "Unreachable";
     }
   }
 
@@ -270,6 +277,40 @@
     }
   }
 
+  async function generateReport() {
+    const status = $("#reportStatus");
+    const out = $("#reportResult");
+    const format = $("#reportFormat").value;
+    let taskId = $("#reportTaskId").value.trim();
+    if (!taskId) {
+      const tasks = loadTasks();
+      if (!tasks.length) {
+        status.textContent = "No tasks yet — run a request first, or enter a Task ID.";
+        return;
+      }
+      taskId = tasks[0].task_id;
+      $("#reportTaskId").value = taskId;
+    }
+    status.textContent = "Generating…";
+    out.classList.remove("hidden");
+    out.textContent = "";
+    try {
+      const data = await api("/bi/reports", {
+        method: "POST",
+        body: JSON.stringify({ task_id: taskId, format }),
+      });
+      if (format === "json") {
+        out.textContent = JSON.stringify(data, null, 2);
+      } else {
+        out.textContent = data.content || JSON.stringify(data, null, 2);
+      }
+      status.textContent = "Done.";
+    } catch (e) {
+      out.textContent = String(e);
+      status.textContent = "Failed.";
+    }
+  }
+
   function bind() {
     $all(".nav-item").forEach((btn) => {
       btn.addEventListener("click", () => showView(btn.dataset.view));
@@ -280,6 +321,7 @@
     $("#btnSubmit").addEventListener("click", submitRequest);
     $("#btnDiag").addEventListener("click", runDiagnostic);
     $("#btnForecast").addEventListener("click", runForecast);
+    $("#btnGenerateReport").addEventListener("click", generateReport);
     $("#btnSaveApi").addEventListener("click", () => {
       setApiBase($("#apiBase").value.trim());
       $("#settingsMsg").textContent = "Saved.";

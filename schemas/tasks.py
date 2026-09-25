@@ -1,9 +1,9 @@
 """Task planning, state and orchestration schemas."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.common import Priority, TaskState, new_id
 
@@ -50,14 +50,13 @@ class Task(BaseModel):
     requires_human_approval: bool = False
     approval_status: Optional[str] = None  # pending / granted / rejected
     context: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     parent_task_id: Optional[str] = None
     child_task_ids: List[str] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskUpdate(BaseModel):

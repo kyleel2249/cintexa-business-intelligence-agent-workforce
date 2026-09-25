@@ -121,8 +121,12 @@ API docs: http://localhost:8000/docs
 - `POST /bi/competitors/research` — competitor research
 - `POST /bi/decisions/analyze` — decision support
 - `GET /bi/dashboard` — executive overview
-- `GET /bi/reports` / `POST /bi/reports` — report generation
+- `POST /bi/reports` — generate a report (from a `task_id` or raw `sections`); `format`: markdown | html | json
+- `GET /bi/reports/{task_id}` — generate a report directly from a task's synthesis
+- `GET /bi/events` — lifecycle event stream (diagnostic/research/competitor/QA started & completed, forecast.created, agent.failed), scoped to your organisation
 - `GET /bi/agents` — agent registry & activity
+- `GET /dashboard` — executive workspace UI (agents, tasks, diagnostics, forecasts, reports, settings)
+- `GET /` / `GET /app` / `GET /ui` — the chat UI
 
 Full OpenAPI schema is available at `/docs`.
 
