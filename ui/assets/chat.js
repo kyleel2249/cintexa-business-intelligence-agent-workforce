@@ -257,11 +257,23 @@
     showTyping();
 
     try {
+      // Memory: send prior turns so the workforce can continue work
+      let prior = [];
+      try {
+        const local = loadLocalSessions().find((s) => s.session_id === sessionId);
+        if (local && Array.isArray(local.messages)) {
+          prior = local.messages
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role, content: m.content }))
+            .slice(-16);
+        }
+      } catch (_) {}
       const data = await api("/bi/chat", {
         method: "POST",
         body: JSON.stringify({
           message: text.trim(),
           session_id: sessionId || undefined,
+          messages: prior,
         }),
       });
       hideTyping();
