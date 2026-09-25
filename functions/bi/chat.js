@@ -1,7 +1,7 @@
 /**
  * Cloudflare Pages Function — POST /bi/chat
- * Runs on the edge so the static Pages host no longer returns 405.
- * Uses the caller's X-LLM-Api-Key (OpenAI or Anthropic) — never stored.
+ * Supports OpenRouter (sk-or-v1-…), OpenAI, and Anthropic (sk-ant-…).
+ * Uses X-LLM-Api-Key only — never stored.
  */
 
 const SYSTEM = `You are CINTEXA Business Intelligence, a coordinated multi-agent BI workforce.
@@ -19,7 +19,8 @@ function json(data, status = 200, extraHeaders = {}) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, X-LLM-Api-Key, Authorization, X-Organisation-Id, X-User-Id",
+      "Access-Control-Allow-Headers":
+        "Content-Type, X-LLM-Api-Key, Authorization, X-Organisation-Id, X-User-Id",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       ...extraHeaders,
     },
@@ -32,11 +33,12 @@ function newId(prefix) {
 
 function detectProvider(key) {
   if (!key) return "none";
+  if (key.startsWith("sk-or-v1-") || key.startsWith("sk-or-")) return "openrouter";
   if (key.startsWith("sk-ant-")) return "anthropic";
   return "openai";
 }
 
-async function callOpenAI(apiKey, userMessage, history) {
+async function callOpenAICompatible(apiKey, userMessage, history, opts) {
   const messages = [{ role: "system", content: SYSTEM }];
   for (const m of history || []) {
     if (m.role === "user" || m.role === "assistant") {
@@ -45,14 +47,19 @@ async function callOpenAI(apiKey, userMessage, history) {
   }
   messages.push({ role: "user", content: userMessage });
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const headers = {
+    Authorization: "Bearer " + apiKey,
+    "Content-Type": "application/json",
+  };
+  if (opts.extraHeaders) {
+    Object.assign(headers, opts.extraHeaders);
+  }
+
+  const res = await fetch(opts.url, {
     method: "POST",
-    headers: {
-      Authorization: "Bearer " + apiKey,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: opts.model,
       temperature: 0.35,
       max_tokens: 2000,
       messages,
@@ -60,10 +67,16 @@ async function callOpenAI(apiKey, userMessage, history) {
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error("OpenAI " + res.status + ": " + errText.slice(0, 300));
+    throw new Error(opts.label + " " + res.status + ": " + errText.slice(0, 400));
   }
   const data = await res.json();
-  return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+  return (
+    (data.choices &&
+      data.choices[0] &&
+      data.choices[0].message &&
+      data.choices[0].message.content) ||
+    ""
+  );
 }
 
 async function callAnthropic(apiKey, userMessage, history) {
@@ -92,7 +105,7 @@ async function callAnthropic(apiKey, userMessage, history) {
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error("Anthropic " + res.status + ": " + errText.slice(0, 300));
+    throw new Error("Anthropic " + res.status + ": " + errText.slice(0, 400));
   }
   const data = await res.json();
   const parts = (data.content || []).map((b) => b.text || "").filter(Boolean);
@@ -110,7 +123,7 @@ export async function onRequest(context) {
     return json(
       {
         detail:
-          "Method not allowed. Use POST. If you see this on a static host without Functions, deploy with Cloudflare Pages Functions enabled.",
+          "Method not allowed. Use POST. Redeploy Pages with functions/ enabled if you see 405.",
       },
       405
     );
@@ -130,12 +143,13 @@ export async function onRequest(context) {
 
   const apiKey =
     (request.headers.get("X-LLM-Api-Key") || "").trim() ||
-    ((request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim());
+    (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
 
   if (!apiKey) {
     return json(
       {
-        detail: "Missing API key. Open Settings and paste your OpenAI (or Anthropic sk-ant-) key.",
+        detail:
+          "Missing API key. Open Settings and paste your OpenRouter (sk-or-v1-…), OpenAI, or Anthropic key.",
       },
       401
     );
@@ -145,16 +159,29 @@ export async function onRequest(context) {
   const sessionId = body.session_id || newId("CHAT-");
   const taskId = newId("TASK-");
   const title = message.length > 48 ? message.slice(0, 48) + "…" : message;
-
-  // Optional prior messages from client (not required)
   const prior = Array.isArray(body.messages) ? body.messages : [];
 
   try {
     let reply;
-    if (provider === "anthropic") {
+    if (provider === "openrouter") {
+      reply = await callOpenAICompatible(apiKey, message, prior, {
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        model: "openai/gpt-4o",
+        label: "OpenRouter",
+        extraHeaders: {
+          "HTTP-Referer":
+            "https://cintexa-business-intelligence-agent-workforce.pages.dev",
+          "X-Title": "CINTEXA Business Intelligence",
+        },
+      });
+    } else if (provider === "anthropic") {
       reply = await callAnthropic(apiKey, message, prior);
     } else {
-      reply = await callOpenAI(apiKey, message, prior);
+      reply = await callOpenAICompatible(apiKey, message, prior, {
+        url: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-4o",
+        label: "OpenAI",
+      });
     }
 
     const userMsg = {

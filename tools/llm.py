@@ -23,8 +23,10 @@ Rules you must follow:
 
 
 def _detect_provider(api_key: str) -> str:
-    """Heuristic: Anthropic keys often start with sk-ant-; otherwise treat as OpenAI."""
+    """Detect provider from key prefix."""
     k = (api_key or "").strip()
+    if k.startswith("sk-or-v1-") or k.startswith("sk-or-"):
+        return "openrouter"
     if k.startswith("sk-ant-"):
         return "anthropic"
     if k:
@@ -42,7 +44,12 @@ class LLMClient:
         key = (api_key or "").strip()
         if key:
             return key
-        return (self.settings.openai_api_key or self.settings.anthropic_api_key or "").strip()
+        return (
+            self.settings.openrouter_api_key
+            or self.settings.openai_api_key
+            or self.settings.anthropic_api_key
+            or ""
+        ).strip()
 
     def available(self, api_key: Optional[str] = None) -> bool:
         return bool(self.resolve_key(api_key))
@@ -51,13 +58,18 @@ class LLMClient:
         key = self.resolve_key(api_key)
         if not key:
             return "none"
-        # Explicit env preference when no per-request key
+        # Prefer prefix detection (works for request keys and env keys)
+        detected = _detect_provider(key)
+        if detected != "none":
+            return detected
         if not (api_key or "").strip():
+            if self.settings.openrouter_api_key:
+                return "openrouter"
             if self.settings.openai_api_key:
                 return "openai"
             if self.settings.anthropic_api_key:
                 return "anthropic"
-        return _detect_provider(key)
+        return "none"
 
     def chat(
         self,
@@ -75,11 +87,47 @@ class LLMClient:
             return self._offline_reply(messages)
 
         prov = self.provider(api_key)
+        if prov == "openrouter":
+            return self._openrouter_chat(messages, sys, temperature, max_tokens, json_mode, key)
         if prov == "openai":
             return self._openai_chat(messages, sys, temperature, max_tokens, json_mode, key)
         if prov == "anthropic":
             return self._anthropic_chat(messages, sys, temperature, max_tokens, key)
         return self._offline_reply(messages)
+
+    def _openrouter_chat(
+        self,
+        messages: List[Dict[str, str]],
+        system: str,
+        temperature: float,
+        max_tokens: int,
+        json_mode: bool,
+        api_key: str,
+    ) -> str:
+        """OpenRouter — OpenAI-compatible API at openrouter.ai."""
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://cintexa-business-intelligence-agent-workforce.pages.dev",
+                "X-Title": "CINTEXA Business Intelligence",
+            },
+        )
+        payload: List[Dict[str, str]] = [{"role": "system", "content": system}]
+        payload.extend(messages)
+        model = getattr(self.settings, "openrouter_model", None) or "openai/gpt-4o"
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": payload,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = client.chat.completions.create(**kwargs)
+        return (resp.choices[0].message.content or "").strip()
 
     def _openai_chat(
         self,
@@ -137,8 +185,8 @@ class LLMClient:
     def _offline_reply(self, messages: List[Dict[str, str]]) -> str:
         last = messages[-1]["content"] if messages else ""
         return (
-            "No API key is configured. Open Settings and enter your OpenAI API key "
-            "(or Anthropic key starting with sk-ant-). "
+            "No API key is configured. Open Settings and enter your OpenRouter key "
+            "(sk-or-v1-…), OpenAI key, or Anthropic key (sk-ant-…). "
             "Specialist agents can still run deterministic paths without an LLM.\n\n"
             f"Last message preview: {last[:280]}"
         )
@@ -166,7 +214,7 @@ class LLMClient:
                 messages,
                 temperature=0.1,
                 max_tokens=600,
-                json_mode=self.provider(api_key) == "openai",
+                json_mode=self.provider(api_key) in ("openai", "openrouter"),
                 api_key=api_key,
             )
             start = raw.find("{")

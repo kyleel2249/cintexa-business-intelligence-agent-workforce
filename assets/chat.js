@@ -231,7 +231,7 @@
       openSettings();
       appendMessage(
         "assistant",
-        "Add your API key in Settings first (OpenAI recommended). The key stays in this browser only."
+        "Add your API key in Settings first (OpenRouter sk-or-v1-… recommended). The key stays in this browser only."
       );
       return;
     }

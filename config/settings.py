@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
+    # OpenRouter (sk-or-v1-…) — OpenAI-compatible; model ids are provider/model
+    openrouter_api_key: str = ""
+    openrouter_model: str = "openai/gpt-4o"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-20241022"
 
