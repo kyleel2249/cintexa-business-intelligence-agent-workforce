@@ -241,4 +241,24 @@ Required request headers for BI routes:
 
 `*.pages.dev` was pointed at a Python-only repository with no static entrypoint. Pages looked for `index.html` (or a built SPA) and returned HTTP 404. The static UI is now at the repo root so a plain Pages deploy works.
 
+## Workforce Orchestrator
 
+The system uses a mission-level **Workforce Orchestrator** (not a simple agent router):
+
+1. Intent understanding & objective normalisation  
+2. Task decomposition with dependency DAG  
+3. Capability-scored agent selection & team assembly  
+4. Parallel/sequential execution with retries  
+5. Evidence gating, conflict detection, quality synthesis  
+6. Full trace, decision log, pause/resume/cancel/approve/replan  
+
+### Mission API
+
+```http
+POST /bi/missions
+GET  /bi/missions/{id}
+POST /bi/missions/{id}/cancel|pause|resume|approve|replan
+GET  /bi/missions/{id}/plan|tasks|agents|evidence|conflicts|events|trace|metrics
+```
+
+Chat requests with multi-word objectives also create missions under the hood.

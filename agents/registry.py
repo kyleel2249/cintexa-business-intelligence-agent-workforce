@@ -1,6 +1,6 @@
 """Agent Registry — single source of truth for the 12 BI agents."""
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from schemas.agents import AgentCapability, AgentProfile, AgentToolPermission
 
@@ -393,3 +393,36 @@ def list_agents(enabled_only: bool = True) -> List[AgentProfile]:
 
 def agent_ids() -> List[str]:
     return list(AGENT_REGISTRY.keys())
+
+
+_AGENT_CLASS_MAP = {
+    "strategy": ("agents.strategy", "ExecutiveStrategyAgent"),
+    "intelligence": ("agents.intelligence", "BusinessIntelligenceAgent"),
+    "diagnostic": ("agents.diagnostic", "BusinessDiagnosticAgent"),
+    "market": ("agents.market", "MarketIntelligenceAgent"),
+    "competitor": ("agents.competitor", "CompetitorResearchAgent"),
+    "research": ("agents.research", "ResearchAgent"),
+    "decision": ("agents.decision", "DecisionSupportAgent"),
+    "forecasting": ("agents.forecasting", "ForecastingAgent"),
+    "knowledge": ("agents.knowledge", "KnowledgeManagerAgent"),
+    "memory": ("agents.memory", "MemoryAgent"),
+    "quality": ("agents.quality", "QualityAssuranceAgent"),
+}
+
+_instances: Dict[str, Any] = {}
+
+
+def get_agent_instance(agent_id: str) -> Any:
+    """Lazy singleton agent instances for orchestration."""
+    if agent_id in _instances:
+        return _instances[agent_id]
+    if agent_id not in _AGENT_CLASS_MAP:
+        raise KeyError(f"No agent implementation for '{agent_id}'")
+    import importlib
+
+    module_path, class_name = _AGENT_CLASS_MAP[agent_id]
+    mod = importlib.import_module(module_path)
+    cls = getattr(mod, class_name)
+    inst = cls()
+    _instances[agent_id] = inst
+    return inst

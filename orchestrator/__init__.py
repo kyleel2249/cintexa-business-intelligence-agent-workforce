@@ -1,4 +1,6 @@
-from orchestrator.core import Orchestrator
-from orchestrator.planner import build_task_plan
+"""CINTEXA Workforce Orchestrator package."""
 
-__all__ = ["Orchestrator", "build_task_plan"]
+from orchestrator.core import Orchestrator
+from orchestrator.workforce import WorkforceOrchestrator, workforce
+
+__all__ = ["Orchestrator", "WorkforceOrchestrator", "workforce"]

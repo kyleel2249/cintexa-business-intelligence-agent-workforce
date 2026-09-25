@@ -15,6 +15,8 @@ from agents.registry import list_agents, get_agent, agent_ids
 from config.settings import get_settings
 from events.bus import bus
 from orchestrator.core import Orchestrator
+from orchestrator.workforce import workforce
+from schemas.missions import MissionCreate, MissionPriority
 from schemas.common import Priority, TaskState
 from schemas.tasks import TaskCreate, Task
 from reports.generator import generate_html_report, generate_json_report, generate_markdown_report
@@ -440,6 +442,196 @@ async def create_chat_session(auth: Dict = Depends(get_org_and_user)):
 
 
 # --- Health ---
+
+# --- Workforce Orchestrator: Missions ---
+class MissionCreateBody(BaseModel):
+    objective: str
+    priority: str = "NORMAL"
+    context: Dict[str, Any] = Field(default_factory=dict)
+    constraints: List[str] = Field(default_factory=list)
+    deadline: Optional[str] = None
+    success_criteria: List[str] = Field(default_factory=list)
+    required_outputs: List[str] = Field(default_factory=list)
+    approval_requirements: List[str] = Field(default_factory=list)
+    idempotency_key: Optional[str] = None
+    auto_run: bool = True
+
+
+@app.post(f"{settings.api_prefix}/missions")
+async def create_mission(
+    body: MissionCreateBody,
+    auth: Dict = Depends(get_org_and_user),
+    llm_api_key: Optional[str] = Header(None, alias="X-LLM-Api-Key"),
+):
+    from orchestrator.workforce import workforce as wf
+    try:
+        pr = MissionPriority[body.priority] if body.priority in MissionPriority.__members__ else MissionPriority.NORMAL
+    except Exception:
+        pr = MissionPriority.NORMAL
+    payload = MissionCreate(
+        objective=body.objective,
+        organisation_id=auth["organisation_id"],
+        user_id=auth["user_id"],
+        priority=pr,
+        context=body.context,
+        constraints=body.constraints,
+        deadline=body.deadline,
+        success_criteria=body.success_criteria,
+        required_outputs=body.required_outputs,
+        approval_requirements=body.approval_requirements,
+        idempotency_key=body.idempotency_key,
+    )
+    key = None
+    # Header may be injected via Depends pattern elsewhere — read raw if needed
+    mission = await wf.create_and_run(payload, api_key=llm_api_key, auto_run=body.auto_run)
+    return mission.model_dump()
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}")
+async def get_mission(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return m.model_dump()
+
+
+@app.post(f"{settings.api_prefix}/missions/{{mission_id}}/cancel")
+async def cancel_mission(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    m = await wf.cancel(mission_id)
+    return m.model_dump()
+
+
+@app.post(f"{settings.api_prefix}/missions/{{mission_id}}/pause")
+async def pause_mission(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return (await wf.pause(mission_id)).model_dump()
+
+
+@app.post(f"{settings.api_prefix}/missions/{{mission_id}}/resume")
+async def resume_mission(
+    mission_id: str,
+    auth: Dict = Depends(get_org_and_user),
+    llm_api_key: Optional[str] = Header(None, alias="X-LLM-Api-Key"),
+):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return (await wf.resume(mission_id, api_key=llm_api_key)).model_dump()
+
+
+@app.post(f"{settings.api_prefix}/missions/{{mission_id}}/approve")
+async def approve_mission(
+    mission_id: str,
+    auth: Dict = Depends(get_org_and_user),
+    llm_api_key: Optional[str] = Header(None, alias="X-LLM-Api-Key"),
+):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return (await wf.approve(mission_id, api_key=llm_api_key)).model_dump()
+
+
+@app.post(f"{settings.api_prefix}/missions/{{mission_id}}/replan")
+async def replan_mission(
+    mission_id: str,
+    auth: Dict = Depends(get_org_and_user),
+    llm_api_key: Optional[str] = Header(None, alias="X-LLM-Api-Key"),
+):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return (await wf.replan(mission_id, api_key=llm_api_key)).model_dump()
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/plan")
+async def mission_plan(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return m.plan.model_dump() if m.plan else {}
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/tasks")
+async def mission_tasks(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return [t.model_dump() for t in m.tasks]
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/agents")
+async def mission_agents(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return {"team": m.assigned_agents}
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/evidence")
+async def mission_evidence(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return m.evidence
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/conflicts")
+async def mission_conflicts(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return [c.model_dump() for c in m.conflicts]
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/events")
+async def mission_events(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return m.events
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/trace")
+async def mission_trace(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return wf.trace(mission_id)
+
+
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/metrics")
+async def mission_metrics(mission_id: str, auth: Dict = Depends(get_org_and_user)):
+    from orchestrator.workforce import workforce as wf
+    m = wf.get(mission_id)
+    if not m or m.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    return {
+        "execution_metrics": m.execution_metrics,
+        "confidence": m.confidence,
+        "quality_score": m.quality_score,
+        "status": m.status.value,
+    }
+
+
+
 @app.get("/health")
 async def health():
     llm = get_llm()

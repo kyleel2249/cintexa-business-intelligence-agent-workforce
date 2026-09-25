@@ -158,6 +158,42 @@ class ChatService:
         if session.title == "New chat" and req.message:
             session.title = req.message[:48] + ("…" if len(req.message) > 48 else "")
 
+
+        # Workforce mission path for multi-step objectives (non-breaking)
+        try:
+            from orchestrator.workforce import workforce
+            from schemas.missions import MissionCreate, MissionPriority
+            if len(req.message.split()) >= 6:
+                mission = await workforce.create_and_run(
+                    MissionCreate(
+                        objective=req.message,
+                        organisation_id=organisation_id,
+                        user_id=user_id,
+                        context=context,
+                        priority=MissionPriority.NORMAL,
+                    ),
+                    api_key=api_key,
+                    auto_run=True,
+                )
+                if mission.result and mission.result.summary:
+                    # Prefer mission synthesis when available
+                    reply_text = mission.result.summary
+                    if mission.result.findings:
+                        reply_text += "\n\n**Findings**\n"
+                        for f in mission.result.findings[:8]:
+                            if isinstance(f, dict):
+                                reply_text += f"- {f.get('summary') or f.get('objective') or f}\n"
+                    if mission.result.actions:
+                        reply_text += "\n\n**Actions**\n" + "\n".join(f"- {a}" for a in mission.result.actions[:8])
+                    if mission.result.limitations:
+                        reply_text += "\n\n**Limitations**\n" + "\n".join(f"- {x}" for x in mission.result.limitations[:5])
+                    assistant_msg.meta["mission_id"] = mission.mission_id
+                    assistant_msg.meta["mission_status"] = mission.status.value
+                    assistant_msg.content = reply_text
+        except Exception as _mission_err:
+            # Fall back to classic task synthesis already computed
+            pass
+
         return {
             "session_id": session.session_id,
             "title": session.title,
