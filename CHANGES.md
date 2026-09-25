@@ -94,3 +94,10 @@ Booted the real server and hit it with `curl` for: `/health`, `/dashboard`,
 populated instead of `null`), `/bi/reports` (all three formats), `GET
 /bi/reports/{task_id}`, `/bi/events`, and `python -m database.init_db`
 (creates all 14 tables cleanly, SQLite schema included).
+
+## Edge backend (Cloudflare Pages Functions) — 405 fix
+
+- `functions/bi/chat.js` — handles **POST /bi/chat** on Pages (no more static 405).
+- `functions/health.js` — **GET /health** for the status line.
+- Uses the browser `X-LLM-Api-Key` only; never stored on the edge.
+- Full multi-agent Python stack remains available via `./start.sh` / Docker / Procfile.

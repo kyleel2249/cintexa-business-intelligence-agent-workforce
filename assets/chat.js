@@ -275,11 +275,10 @@
       var help = "";
       if (/\b405\b/.test(msg)) {
         help =
-          "\n\n**What this means:** this page is static (e.g. Cloudflare Pages) and cannot handle chat POSTs.\n\n" +
-          "**Fix:** run the API on your machine, then open the UI from that server (not only *.pages.dev):\n\n" +
-          "```\nuvicorn api.main:app --host 0.0.0.0 --port 8000\n```\n\n" +
-          "Then open **http://localhost:8000/** — put your API key in Settings and try again.\n\n" +
-          "Your OpenAI key is fine; the missing piece is the running Python backend.";
+          "\n\n**405** means this host rejected POST /bi/chat.\n\n" +
+          "1) On Cloudflare Pages: redeploy so the **functions/** edge handlers are live, then hard-refresh.\n" +
+          "2) Full Python workforce: run `./start.sh` (or `uvicorn api.main:app --host 0.0.0.0 --port 8000`) and open **http://localhost:8000/**\n" +
+          "3) Confirm Settings has your OpenAI key, then try again.";
       } else if (/Failed to fetch|NetworkError|API offline/i.test(msg)) {
         help =
           "\n\nStart the backend: `uvicorn api.main:app --host 0.0.0.0 --port 8000` and use http://localhost:8000/";
