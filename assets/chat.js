@@ -212,6 +212,7 @@
     });
     renderSessionList();
     $("#sidebar").classList.remove("open");
+    scrollToBottom(true);
   }
 
   async function sendMessage(text) {

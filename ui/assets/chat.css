@@ -278,11 +278,32 @@ body {
 .mobile-only { display: none; }
 
 .messages {
-  flex: 1; overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0; /* critical: enables overflow scroll inside flex column */
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 1.25rem 1rem 1rem;
-  display: flex; flex-direction: column; gap: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
   scroll-behavior: smooth;
   transform-style: preserve-3d;
+}
+
+.messages::-webkit-scrollbar {
+  width: 8px;
+}
+.messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.messages::-webkit-scrollbar-thumb {
+  background: rgba(123, 157, 255, 0.25);
+  border-radius: 8px;
+}
+.messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(123, 157, 255, 0.4);
 }
 
 .welcome {
