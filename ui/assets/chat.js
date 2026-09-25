@@ -50,7 +50,9 @@
   }
 
   function updateKeyBadge() {
-    /* Key is never shown in the header — only entered in Settings. */
+    const k = getApiKey();
+    const badge = $("#keyBadge");
+    if (badge) badge.textContent = "Key: " + maskKey(k);
   }
 
   function loadLocalSessions() {
@@ -119,7 +121,7 @@
     const el = $("#suggestions");
     if (!el) return;
     el.innerHTML = SUGGESTIONS.map(
-      (s) => `<button type="button" data-s="${escapeHtml(s)}">${escapeHtml(s)}</button>`
+      (s) => `<button type="button" class="tilt" data-s="${escapeHtml(s)}">${escapeHtml(s)}</button>`
     ).join("");
     el.querySelectorAll("button").forEach((b) => {
       b.addEventListener("click", () => {
@@ -148,29 +150,6 @@
     });
   }
 
-
-  function scrollToBottom(force) {
-    const el = $("#messages");
-    if (!el) return;
-    const run = function () {
-      el.scrollTop = el.scrollHeight;
-      const last = el.lastElementChild;
-      if (last && typeof last.scrollIntoView === "function") {
-        try {
-          last.scrollIntoView({ block: "end", behavior: force ? "auto" : "smooth" });
-        } catch (e) {
-          el.scrollTop = el.scrollHeight;
-        }
-      }
-    };
-    run();
-    requestAnimationFrame(function () {
-      run();
-      setTimeout(run, 40);
-      setTimeout(run, 120);
-    });
-  }
-
   function appendMessage(role, content, meta) {
     const welcome = $("#welcome");
     if (welcome) welcome.remove();
@@ -185,11 +164,16 @@
     body.className = "content";
     body.innerHTML = simpleMarkdown(content);
     bubble.appendChild(body);
-    /* Do not render technical meta (COMPLETED, edge_chat, APPROVED, LLM provider). */
+    if (meta) {
+      const m = document.createElement("div");
+      m.className = "meta";
+      m.textContent = meta;
+      bubble.appendChild(m);
+    }
     row.appendChild(avatar);
     row.appendChild(bubble);
     $("#messages").appendChild(row);
-    scrollToBottom();
+    $("#messages").scrollTop = $("#messages").scrollHeight;
   }
 
   function showTyping() {
@@ -199,7 +183,7 @@
     row.innerHTML =
       '<div class="avatar">C</div><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
     $("#messages").appendChild(row);
-    scrollToBottom(true);
+    $("#messages").scrollTop = $("#messages").scrollHeight;
   }
 
   function hideTyping() {
@@ -213,8 +197,8 @@
     $("#messages").innerHTML = `
       <div class="welcome" id="welcome">
         <div class="welcome-icon">C</div>
-        <h2>Cintexa Business Intelligence</h2>
-        <p>Ask about Business health, Markets, Competitors, Forecasts or Strategy.</p>
+        <h2>Business Intelligence workforce</h2>
+        <p>Ask about business health, markets, competitors, forecasts or strategy. Twelve specialist agents plan the work and quality-check the answer.</p>
         <div class="suggestions" id="suggestions"></div>
       </div>`;
     renderSuggestions();
@@ -230,12 +214,15 @@
     $("#messages").innerHTML = "";
     (s.messages || []).forEach((m) => {
       if (m.role === "user" || m.role === "assistant") {
-        appendMessage(m.role, m.content);
+        const meta =
+          m.role === "assistant" && m.meta
+            ? [m.meta.objective, m.meta.qa, m.meta.llm_provider].filter(Boolean).join(" · ")
+            : null;
+        appendMessage(m.role, m.content, meta);
       }
     });
     renderSessionList();
     $("#sidebar").classList.remove("open");
-    scrollToBottom(true);
   }
 
   async function sendMessage(text) {
@@ -244,7 +231,7 @@
       openSettings();
       appendMessage(
         "assistant",
-        "Add your API key in Settings first (OpenRouter sk-or-v1-… recommended). The key stays in this browser only."
+        "Add your API key in Settings first (OpenAI recommended). The key stays in this browser only."
       );
       return;
     }
@@ -257,29 +244,25 @@
     showTyping();
 
     try {
-      // Memory: send prior turns so the workforce can continue work
-      let prior = [];
-      try {
-        const local = loadLocalSessions().find((s) => s.session_id === sessionId);
-        if (local && Array.isArray(local.messages)) {
-          prior = local.messages
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({ role: m.role, content: m.content }))
-            .slice(-16);
-        }
-      } catch (_) {}
       const data = await api("/bi/chat", {
         method: "POST",
         body: JSON.stringify({
           message: text.trim(),
           session_id: sessionId || undefined,
-          messages: prior,
         }),
       });
       hideTyping();
       sessionId = data.session_id;
       $("#chatTitle").textContent = data.title || "Chat";
-      appendMessage("assistant", data.message?.content || "No response");
+      const meta = [
+        data.task_state,
+        data.message?.meta?.objective,
+        data.message?.meta?.qa,
+        data.llm_provider ? "LLM: " + data.llm_provider : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      appendMessage("assistant", data.message?.content || "No response", meta);
       saveLocalSession({
         session_id: data.session_id,
         title: data.title,
@@ -292,10 +275,11 @@
       var help = "";
       if (/\b405\b/.test(msg)) {
         help =
-          "\n\n**405** means this host rejected POST /bi/chat.\n\n" +
-          "1) On Cloudflare Pages: redeploy so the **functions/** edge handlers are live, then hard-refresh.\n" +
-          "2) Full Python workforce: run `./start.sh` (or `uvicorn api.main:app --host 0.0.0.0 --port 8000`) and open **http://localhost:8000/**\n" +
-          "3) Confirm Settings has your OpenAI key, then try again.";
+          "\n\n**What this means:** this page is static (e.g. Cloudflare Pages) and cannot handle chat POSTs.\n\n" +
+          "**Fix:** run the API on your machine, then open the UI from that server (not only *.pages.dev):\n\n" +
+          "```\nuvicorn api.main:app --host 0.0.0.0 --port 8000\n```\n\n" +
+          "Then open **http://localhost:8000/** — put your API key in Settings and try again.\n\n" +
+          "Your OpenAI key is fine; the missing piece is the running Python backend.";
       } else if (/Failed to fetch|NetworkError|API offline/i.test(msg)) {
         help =
           "\n\nStart the backend: `uvicorn api.main:app --host 0.0.0.0 --port 8000` and use http://localhost:8000/";
@@ -339,36 +323,36 @@
 
 
   function initMotion() {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const host = document.getElementById("particles");
-    if (host && !reduce) {
-      const n = Math.min(36, Math.floor(window.innerWidth / 40));
-      for (let i = 0; i < n; i++) {
-        const el = document.createElement("span");
-        el.className = "particle";
-        el.style.left = Math.random() * 100 + "%";
-        el.style.animationDuration = 8 + Math.random() * 14 + "s";
-        el.style.animationDelay = -Math.random() * 12 + "s";
-        el.style.width = el.style.height = 2 + Math.random() * 3 + "px";
-        el.style.opacity = String(0.3 + Math.random() * 0.5);
-        host.appendChild(el);
-      }
-    }
-    // Gentle parallax on the stage from pointer movement
-    if (!reduce) {
-      const stage = document.querySelector(".stage");
-      window.addEventListener(
-        "pointermove",
-        (e) => {
-          if (!stage) return;
-          const x = (e.clientX / window.innerWidth - 0.5) * 12;
-          const y = (e.clientY / window.innerHeight - 0.5) * 10;
-          stage.style.transform =
-            "translate3d(" + x * 0.4 + "px," + y * 0.35 + "px,0) rotateY(" + x * 0.15 + "deg) rotateX(" + -y * 0.12 + "deg)";
-        },
-        { passive: true }
-      );
-    }
+    if (!window.CintexaMotion) return;
+    window.CintexaMotion.spawnParticles("particles");
+    const stageCtl = window.CintexaMotion.initStage(".stage");
+    window.CintexaMotion.initTilt(".tilt, .suggestions button, .btn-new, .send");
+    // iOS requires a user gesture to grant motion-sensor permission — a
+    // first tap anywhere on the page is enough, and it's a no-op elsewhere.
+    document.addEventListener("pointerdown", () => stageCtl.enableGyro(), { once: true });
+  }
+
+  function initCommandPalette() {
+    if (!window.CintexaMotion) return;
+    const cmdk = window.CintexaMotion.commandPalette({
+      commands: [
+        { id: "new-chat", label: "New chat", hint: "start fresh", run: newChat },
+        { id: "settings", label: "Open settings", hint: "API key", run: openSettings },
+        { id: "sidebar", label: "Toggle sidebar", hint: "mobile menu", run: () => $("#sidebar")?.classList.toggle("open") },
+        { id: "dashboard", label: "Open executive dashboard", hint: "agents · diagnostics · reports", run: () => (window.location.href = "dashboard.html") },
+        ...SUGGESTIONS.map((s, i) => ({
+          id: "suggestion-" + i,
+          label: s,
+          hint: "ask CINTEXA BI",
+          run: () => {
+            $("#input").value = s;
+            $("#input").dispatchEvent(new Event("input"));
+            $("#composer").requestSubmit();
+          },
+        })),
+      ],
+    });
+    $("#btnCmdk")?.addEventListener("click", cmdk.open);
   }
 
   function bind() {
@@ -417,6 +401,7 @@
     updateKeyBadge();
     ping();
     initMotion();
+    initCommandPalette();
   }
 
   bind();

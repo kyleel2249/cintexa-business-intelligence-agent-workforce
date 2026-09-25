@@ -95,9 +95,33 @@ populated instead of `null`), `/bi/reports` (all three formats), `GET
 /bi/reports/{task_id}`, `/bi/events`, and `python -m database.init_db`
 (creates all 14 tables cleanly, SQLite schema included).
 
-## Edge backend (Cloudflare Pages Functions) — 405 fix
+## Interface pass — advanced features & 3D motion
 
-- `functions/bi/chat.js` — handles **POST /bi/chat** on Pages (no more static 405).
-- `functions/health.js` — **GET /health** for the status line.
-- Uses the browser `X-LLM-Api-Key` only; never stored on the edge.
-- Full multi-agent Python stack remains available via `./start.sh` / Docker / Procfile.
+- **New shared toolkit**: `assets/motion.js` + `assets/motion.css`, used by
+  both `index.html` (chat) and the new `dashboard.html`:
+  - Pointer + device-orientation (gyroscope) parallax with independent
+    per-layer depth, using the CSS `translate` property so it composes with
+    each element's own keyframe animation instead of overwriting it.
+  - Real per-card 3D tilt-on-hover, computed from the cursor's position
+    inside each element's own bounding box (every card tilts independently
+    and tracks the cursor).
+  - A draggable 3D "agent orbit" ring (CSS `rotateY` + `translateZ`),
+    auto-rotating with momentum/inertia on release, click a node for detail.
+  - Animated count-up numbers for metric cards.
+  - A toast notification system, wired into every dashboard action
+    (request submitted, diagnostic run, forecast run, report generated,
+    settings saved, errors).
+  - A Ctrl/Cmd+K command palette — searchable, keyboard-navigable — on
+    both pages, with page-specific commands (jump to a view, run a
+    diagnostic/forecast, generate a report, open the other page).
+  - `prefers-reduced-motion` is honoured throughout: every animation above
+    disables itself automatically for users who've asked for that.
+- **New on the dashboard**: a live activity feed (`#eventFeed`) polling the
+  `/bi/events` endpoint every 6s, and a breathing "live" pulse indicator on
+  the connection status pill.
+- All new/changed frontend files mirrored into `ui/` for the Cloudflare
+  Pages static-hosting copy, as with everything else in this repo.
+- Verified: `node --check` on all three JS files, full HTML balance check
+  on both pages, and a live server smoke test confirming every new asset
+  and DOM id (`agentOrbit`, `eventFeed`, `btnCmdk`, `pulseDot`, …) resolves
+  with `200`. Backend test suite unaffected — still 27/27.

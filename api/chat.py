@@ -12,7 +12,6 @@ from orchestrator.core import Orchestrator
 from schemas.common import Priority
 from schemas.tasks import TaskCreate
 from tools.llm import get_llm
-from tools.web import extract_urls, browse_urls, format_browse_context
 
 
 class ChatMessage(BaseModel):
@@ -128,15 +127,7 @@ class ChatService:
 
         task = await self.orchestrator.run(task.task_id)
 
-        # Browse any URLs in the message (and optional context urls)
-        url_list = extract_urls(req.message)
-        extra = (req.context or {}).get("urls") if isinstance(req.context, dict) else None
-        if isinstance(extra, list):
-            url_list.extend([u for u in extra if isinstance(u, str)])
-        pages = await browse_urls(url_list) if url_list else []
-        browse_ctx = format_browse_context(pages) if pages else ""
-
-        # Natural language synthesis with web evidence + memory loop
+        # Natural language synthesis
         synthesis_source = {
             "state": task.state.value if hasattr(task.state, "value") else str(task.state),
             "objective": task.objective,
@@ -144,52 +135,11 @@ class ChatService:
             "errors": task.errors,
             "evidence_ids": task.evidence_ids,
             "plan_hint": plan_hint,
-            "web_sources": [
-                {"url": p.get("url"), "ok": p.get("ok"), "title": p.get("title")} for p in pages
-            ],
         }
         if self.llm.available(api_key):
-            hist = history[:-1] if history else []
-            prompt_extra = ""
-            if browse_ctx:
-                prompt_extra = (
-                    "\n\nBrowsed page evidence (use as primary sources; do not invent):\n"
-                    + browse_ctx[:20000]
-                )
-            reply_text = self.llm.synthesise_reply(
-                req.message + prompt_extra, synthesis_source, hist, api_key=api_key
-            )
-            # Completion loop: if model asks for more URLs, fetch and resynthesise (max 3)
-            import re as _re
-            for _ in range(3):
-                m = _re.search(r"NEED_URLS:\s*(.+)", reply_text)
-                if not m:
-                    break
-                more_urls = extract_urls(m.group(1).replace("|", " "))
-                if not more_urls:
-                    break
-                more_pages = await browse_urls(more_urls)
-                pages.extend(more_pages)
-                browse_ctx = format_browse_context(pages)
-                synthesis_source["web_sources"] = [
-                    {"url": p.get("url"), "ok": p.get("ok"), "title": p.get("title")} for p in pages
-                ]
-                reply_text = self.llm.synthesise_reply(
-                    req.message
-                    + "\n\nAdditional browsed evidence:\n"
-                    + browse_ctx[:20000]
-                    + "\n\nContinue and finish the request. Do not emit NEED_URLS unless essential.",
-                    synthesis_source,
-                    hist,
-                    api_key=api_key,
-                )
-            reply_text = _re.sub(r"^NEED_URLS:.*$", "", reply_text, flags=_re.M).strip()
+            reply_text = self.llm.synthesise_reply(req.message, synthesis_source, history[:-1], api_key=api_key)
         else:
             reply_text = self._deterministic_reply(req.message, task)
-            if pages:
-                reply_text += "\n\n**Sources fetched:** " + ", ".join(
-                    p.get("url", "") for p in pages if p.get("ok")
-                )
 
         assistant_msg = ChatMessage(
             role="assistant",
@@ -201,9 +151,6 @@ class ChatService:
                 "agents": task.agents_assigned,
                 "llm_provider": self.llm.provider(api_key),
                 "qa": (task.results.get("quality") or {}).get("qa_result"),
-                "sources": [
-                    {"url": p.get("url"), "ok": p.get("ok"), "title": p.get("title")} for p in pages
-                ],
             },
         )
         session.messages.append(assistant_msg)

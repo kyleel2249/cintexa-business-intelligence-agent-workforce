@@ -1,0 +1,186 @@
+/*!
+ * CINTEXA Motion — shared styling for the toolkit in motion.js.
+ * Relies on --bg/--surface/--border/--text/--muted/--accent/--accent-2/
+ * --radius/--font/--mono custom properties already defined by the page's
+ * own theme stylesheet (chat.css or dashboard.css).
+ */
+
+.tilt {
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* ===== Toasts ===== */
+.toast-host {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+  max-width: min(340px, calc(100vw - 2rem));
+}
+.toast {
+  background: var(--surface, #181c25);
+  border: 1px solid var(--border, rgba(120, 140, 200, 0.2));
+  color: var(--text, #eef1f8);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  font-family: var(--font, system-ui, sans-serif);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  transform: translate3d(12px, 8px, 0) scale(0.96);
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  border-left: 3px solid var(--accent, #6b8cff);
+}
+.toast.show { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+.toast-ok { border-left-color: var(--ok, #7fd99a); }
+.toast-err { border-left-color: var(--danger, #f07178); }
+.toast-info { border-left-color: var(--accent, #6b8cff); }
+
+/* ===== Command palette ===== */
+.cmdk-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(4, 6, 12, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+  z-index: 300;
+}
+.cmdk-backdrop.hidden { display: none; }
+.cmdk {
+  width: min(560px, 92vw);
+  background: var(--surface-solid, var(--surface, #161a26));
+  border: 1px solid var(--border, rgba(120, 140, 200, 0.2));
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: cmdkIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes cmdkIn {
+  from { opacity: 0; transform: translate3d(0, -10px, 0) scale(0.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+.cmdk-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border, rgba(120, 140, 200, 0.2));
+  background: transparent;
+  color: var(--text, #eef1f8);
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.9rem 1rem;
+  outline: none;
+}
+.cmdk-list { max-height: 320px; overflow-y: auto; padding: 0.4rem; }
+.cmdk-item {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  background: transparent; border: none; color: var(--text, #eef1f8);
+  padding: 0.6rem 0.75rem; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 0.88rem; text-align: left;
+}
+.cmdk-item .cmdk-item-hint { font-size: 0.72rem; color: var(--muted, #8b93a8); flex-shrink: 0; }
+.cmdk-item:hover, .cmdk-item.active { background: rgba(123, 157, 255, 0.12); }
+.cmdk-empty { padding: 1rem; font-size: 0.85rem; color: var(--muted, #8b93a8); text-align: center; }
+.cmdk-hint {
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border, rgba(120, 140, 200, 0.2));
+  font-size: 0.7rem; color: var(--muted, #8b93a8);
+}
+
+.cmdk-trigger {
+  cursor: pointer;
+  font-family: var(--mono, ui-monospace, monospace);
+  transition: border-color 0.2s, color 0.2s;
+}
+.cmdk-trigger:hover { border-color: var(--accent, #6b8cff); color: var(--accent, #6b8cff); }
+
+/* ===== 3D orbit ring ===== */
+.orbit-container {
+  position: relative;
+  height: 260px;
+  margin: 0.5rem 0 1rem;
+  perspective: 900px;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+.orbit-container.dragging { cursor: grabbing; }
+.orbit-ring {
+  position: absolute; left: 50%; top: 50%;
+  width: 1px; height: 1px;
+  transform-style: preserve-3d;
+}
+.orbit-node {
+  position: absolute; top: -30px; left: -58px;
+  width: 116px;
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  background: var(--surface, #181c25);
+  border: 1px solid var(--border, rgba(120, 140, 200, 0.2));
+  border-radius: 12px;
+  padding: 0.55rem 0.5rem;
+  color: var(--text, #eef1f8);
+  font: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: box-shadow 0.2s, border-color 0.2s;
+  backface-visibility: hidden;
+}
+.orbit-node:hover {
+  border-color: var(--accent, #6b8cff);
+  box-shadow: 0 0 24px rgba(123, 157, 255, 0.35);
+}
+.orbit-node-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent, #6b8cff), var(--accent-2, #5ef0d0));
+  box-shadow: 0 0 10px rgba(123, 157, 255, 0.7);
+}
+.orbit-node-label {
+  font-size: 0.7rem;
+  text-align: center;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.orbit-hint {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted, #8b93a8);
+  margin-top: -0.5rem;
+}
+
+/* ===== Live pulse indicator ===== */
+.pulse-dot {
+  display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted, #8b93a8);
+  margin-right: 0.4rem;
+  position: relative;
+}
+.pulse-dot.live { background: var(--ok, #7fd99a); }
+.pulse-dot.live::after {
+  content: "";
+  position: absolute; inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--ok, #7fd99a);
+  animation: pulseRing 1.8s ease-out infinite;
+}
+@keyframes pulseRing {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tilt, .toast, .cmdk, .pulse-dot.live::after { animation: none !important; transition: none !important; }
+}
