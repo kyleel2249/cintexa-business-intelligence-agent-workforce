@@ -50,9 +50,7 @@
   }
 
   function updateKeyBadge() {
-    const k = getApiKey();
-    const badge = $("#keyBadge");
-    if (badge) badge.textContent = "Key: " + maskKey(k);
+    /* Key is never shown in the header — only entered in Settings. */
   }
 
   function loadLocalSessions() {
@@ -164,12 +162,7 @@
     body.className = "content";
     body.innerHTML = simpleMarkdown(content);
     bubble.appendChild(body);
-    if (meta) {
-      const m = document.createElement("div");
-      m.className = "meta";
-      m.textContent = meta;
-      bubble.appendChild(m);
-    }
+    /* Do not render technical meta (COMPLETED, edge_chat, APPROVED, LLM provider). */
     row.appendChild(avatar);
     row.appendChild(bubble);
     $("#messages").appendChild(row);
@@ -214,11 +207,7 @@
     $("#messages").innerHTML = "";
     (s.messages || []).forEach((m) => {
       if (m.role === "user" || m.role === "assistant") {
-        const meta =
-          m.role === "assistant" && m.meta
-            ? [m.meta.objective, m.meta.qa, m.meta.llm_provider].filter(Boolean).join(" · ")
-            : null;
-        appendMessage(m.role, m.content, meta);
+        appendMessage(m.role, m.content);
       }
     });
     renderSessionList();
@@ -254,15 +243,7 @@
       hideTyping();
       sessionId = data.session_id;
       $("#chatTitle").textContent = data.title || "Chat";
-      const meta = [
-        data.task_state,
-        data.message?.meta?.objective,
-        data.message?.meta?.qa,
-        data.llm_provider ? "LLM: " + data.llm_provider : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      appendMessage("assistant", data.message?.content || "No response", meta);
+      appendMessage("assistant", data.message?.content || "No response");
       saveLocalSession({
         session_id: data.session_id,
         title: data.title,
