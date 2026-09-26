@@ -771,6 +771,38 @@ async def api_info():
 
 
 
+
+# --- Phase 7 Evolution API ---
+@app.get(f"{settings.api_prefix}/evo/freeze")
+async def evo_freeze_status(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from evolution.governance import change_freeze
+    return change_freeze.status()
+
+
+@app.post(f"{settings.api_prefix}/evo/proposals")
+async def evo_create_proposal(body: Dict[str, Any], ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from evolution.proposals import ProposalService
+    from core.errors import ValidationError, AuthorizationError
+    try:
+        return ProposalService().create(
+            ctx["organisation_id"],
+            title=body.get("title") or "",
+            category=body.get("category") or "PROMPT_IMPROVEMENT",
+            proposed_change=body.get("proposed_change") or {},
+            evidence=body.get("evidence"),
+            detected_problem=body.get("detected_problem") or "",
+            description=body.get("description") or "",
+        )
+    except (ValidationError, AuthorizationError) as e:
+        raise HTTPException(400 if isinstance(e, ValidationError) else 403, str(e))
+
+
+@app.get(f"{settings.api_prefix}/evo/proposals")
+async def evo_list_proposals(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from evolution.proposals import ProposalService
+    return {"proposals": ProposalService().list(ctx["organisation_id"])}
+
+
 # --- Phase 6 Observability & Evaluation API ---
 @app.get(f"{settings.api_prefix}/obs/traces/{{trace_id}}")
 async def obs_trace(trace_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
