@@ -354,3 +354,37 @@ def test_tf_api(db_ready):
         # cross-org hide
         eid = inv.json()["execution_id"]
         assert client.get(f"/bi/tf/executions/{eid}", headers={"X-Organisation-Id": "other", "X-User-Id": "u"}).status_code == 404
+
+
+def test_disabled_tool_denied(engine):
+    from persistence.unit_of_work import UnitOfWork
+    from tool_fabric.models_db import TFTool
+    from core.errors import AuthorizationError, NotFoundError
+
+    tool = engine.registry.get_by_slug("code.python", "org1")
+    with UnitOfWork() as uow:
+        row = uow.session.get(TFTool, tool.tool_id)
+        row.enabled = False
+    try:
+        with pytest.raises(AuthorizationError, match="disabled"):
+            engine.invoke(
+                organisation_id="org1",
+                tool_slug="code.python",
+                input_data={"code": "print(1)"},
+                agent_key="worker",
+            )
+    finally:
+        with UnitOfWork() as uow:
+            row = uow.session.get(TFTool, tool.tool_id)
+            row.enabled = True
+
+
+def test_python_host_fs_blocked(engine):
+    from core.errors import ExecutionError
+    with pytest.raises(ExecutionError):
+        engine.invoke(
+            organisation_id="org1",
+            tool_slug="code.python",
+            input_data={"code": "print(open('/etc/passwd').read()[:30])"},
+            agent_key="worker",
+        )

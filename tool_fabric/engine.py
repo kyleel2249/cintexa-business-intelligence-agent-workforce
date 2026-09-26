@@ -18,6 +18,27 @@ from tool_fabric.policy import ExecutionPolicy, default_policy
 from tool_fabric.registry import ToolRegistry
 from tool_fabric.sandbox import Sandbox
 
+_WS_GUARD = """
+import builtins, os
+_ws = os.path.realpath(os.getcwd())
+_real_open = builtins.open
+def _safe_open(file, *a, **k):
+    try:
+        name = file if isinstance(file, (str, bytes, os.PathLike)) else getattr(file, 'name', None)
+        if name is None:
+            return _real_open(file, *a, **k)
+        path = os.path.realpath(os.path.join(_ws, name) if not os.path.isabs(str(name)) else name)
+        if path != _ws and not path.startswith(_ws + os.sep):
+            raise PermissionError('Path outside workspace: %s' % name)
+    except PermissionError:
+        raise
+    except Exception:
+        pass
+    return _real_open(file, *a, **k)
+builtins.open = _safe_open
+"""
+
+
 
 class ToolExecutionEngine:
     def __init__(self, registry: Optional[ToolRegistry] = None, sandbox: Optional[Sandbox] = None):
@@ -340,7 +361,7 @@ class ToolExecutionEngine:
         return {"files": files}, []
 
     def _code_python(self, inp, ws, policy, tool):
-        code = inp["code"]
+        code = _WS_GUARD + "\n" + inp["code"]
         script = ws.root / "main.py"
         script.write_text(code, encoding="utf-8")
         timeout = min(tool.timeout_sec or 15, policy.max_timeout_sec)

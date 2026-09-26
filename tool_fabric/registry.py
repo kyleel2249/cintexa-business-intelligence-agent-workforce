@@ -218,15 +218,16 @@ class ToolRegistry:
             uow.session.expunge(row)
             return row
 
-    def get_by_slug(self, slug: str, organisation_id: str) -> Optional[TFTool]:
+    def get_by_slug(self, slug: str, organisation_id: str, *, include_disabled: bool = True) -> Optional[TFTool]:
         with UnitOfWork() as uow:
-            row = (
+            q = (
                 uow.session.query(TFTool)
-                .filter_by(slug=slug, enabled=True)
+                .filter_by(slug=slug)
                 .filter(TFTool.organisation_id.in_([organisation_id, self.SYSTEM]))
-                .order_by(TFTool.organisation_id.desc())  # org-specific first roughly
-                .first()
             )
+            if not include_disabled:
+                q = q.filter_by(enabled=True)
+            row = q.order_by(TFTool.organisation_id.desc()).first()
             if row:
                 uow.session.expunge(row)
             return row
