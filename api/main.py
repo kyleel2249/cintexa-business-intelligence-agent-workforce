@@ -769,6 +769,33 @@ async def api_info():
 
 
 
+
+# --- Phase 5 Reliability API ---
+@app.get(f"{settings.api_prefix}/rel/health")
+async def rel_health(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from reliability.health import health_registry
+    from reliability.circuit import circuits
+    return {"dependencies": health_registry.all(), "circuits": circuits.all_status()}
+
+
+@app.get(f"{settings.api_prefix}/rel/dead-letters")
+async def rel_dead_letters(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from reliability.dead_letter import DeadLetterQueue
+    return {"items": DeadLetterQueue().list_open(ctx["organisation_id"])}
+
+
+@app.post(f"{settings.api_prefix}/rel/dead-letters/{{dead_letter_id}}/reprocess")
+async def rel_reprocess(dead_letter_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from reliability.dead_letter import DeadLetterQueue
+    from core.errors import NotFoundError, ValidationError
+    try:
+        return DeadLetterQueue().reprocess(dead_letter_id, ctx["organisation_id"])
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValidationError as e:
+        raise HTTPException(400, str(e))
+
+
 # --- Phase 4 Tool Fabric API ---
 class TFInvokeRequest(BaseModel):
     tool_slug: str
