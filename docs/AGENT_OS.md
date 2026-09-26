@@ -29,3 +29,13 @@ runtime.register_handler("my_agent", my_handler)
 ## Tables
 
 `aos_agents`, `aos_capabilities`, `aos_executions`, `aos_messages`, `aos_escalations`, `aos_graph_nodes`
+
+## HTTP API (`/bi/aos/...`)
+
+- `POST /bi/aos/agents` — register
+- `GET /bi/aos/agents` — list (org-scoped)
+- `GET /bi/aos/agents/{id}` — get (404 cross-tenant)
+- `POST .../activate|pause|drain|disable`
+- `GET /bi/aos/capabilities/{capability}`
+- `POST /bi/aos/execute`
+

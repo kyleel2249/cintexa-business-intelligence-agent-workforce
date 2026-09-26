@@ -766,6 +766,165 @@ async def api_info():
     }
 
 
+
+# --- Phase 2 Agent Operating System API ---
+class AOSRegisterRequest(BaseModel):
+    agent_key: str
+    name: str
+    capabilities: List[str] = Field(default_factory=list)
+    version: str = "1.0.0"
+
+
+class AOSExecuteRequest(BaseModel):
+    agent_id: str
+    input_data: Dict[str, Any] = Field(default_factory=dict)
+    capability: Optional[str] = None
+    task_id: Optional[str] = None
+
+
+@app.post(f"{settings.api_prefix}/aos/agents")
+async def aos_register_agent(body: AOSRegisterRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    from core.errors import ConflictError, ValidationError
+    reg = AgentOSRegistry()
+    try:
+        agent = reg.register(
+            organisation_id=ctx["organisation_id"],
+            agent_key=body.agent_key,
+            name=body.name,
+            capabilities=body.capabilities,
+            version=body.version,
+            actor=ctx["user_id"],
+        )
+        return {
+            "id": agent.id,
+            "agent_key": agent.agent_key,
+            "version": agent.version,
+            "lifecycle_state": agent.lifecycle_state,
+            "organisation_id": agent.organisation_id,
+        }
+    except (ConflictError, ValidationError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get(f"{settings.api_prefix}/aos/agents")
+async def aos_list_agents(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    reg = AgentOSRegistry()
+    agents = reg.list_agents(ctx["organisation_id"])
+    return {
+        "agents": [
+            {
+                "id": a.id,
+                "agent_key": a.agent_key,
+                "name": a.name,
+                "version": a.version,
+                "lifecycle_state": a.lifecycle_state,
+                "capabilities": a.capabilities,
+            }
+            for a in agents
+        ]
+    }
+
+
+@app.get(f"{settings.api_prefix}/aos/agents/{{agent_id}}")
+async def aos_get_agent(agent_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    reg = AgentOSRegistry()
+    a = reg.get(agent_id, ctx["organisation_id"])
+    if not a:
+        raise HTTPException(404, "Agent not found")
+    return {
+        "id": a.id,
+        "agent_key": a.agent_key,
+        "name": a.name,
+        "version": a.version,
+        "lifecycle_state": a.lifecycle_state,
+        "capabilities": a.capabilities,
+        "health_score": a.health_score,
+    }
+
+
+@app.post(f"{settings.api_prefix}/aos/agents/{{agent_id}}/activate")
+async def aos_activate(agent_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    from core.errors import ConflictError, NotFoundError
+    try:
+        a = AgentOSRegistry().activate(agent_id, ctx["organisation_id"], actor=ctx["user_id"])
+        return {"id": a.id, "lifecycle_state": a.lifecycle_state}
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post(f"{settings.api_prefix}/aos/agents/{{agent_id}}/pause")
+async def aos_pause(agent_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    from core.errors import ConflictError, NotFoundError
+    try:
+        a = AgentOSRegistry().pause(agent_id, ctx["organisation_id"], actor=ctx["user_id"])
+        return {"id": a.id, "lifecycle_state": a.lifecycle_state}
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post(f"{settings.api_prefix}/aos/agents/{{agent_id}}/drain")
+async def aos_drain(agent_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    from core.errors import ConflictError, NotFoundError
+    try:
+        a = AgentOSRegistry().drain(agent_id, ctx["organisation_id"], actor=ctx["user_id"])
+        return {"id": a.id, "lifecycle_state": a.lifecycle_state}
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post(f"{settings.api_prefix}/aos/agents/{{agent_id}}/disable")
+async def aos_disable(agent_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    from core.errors import ConflictError, NotFoundError
+    try:
+        a = AgentOSRegistry().disable(agent_id, ctx["organisation_id"], actor=ctx["user_id"])
+        return {"id": a.id, "lifecycle_state": a.lifecycle_state}
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get(f"{settings.api_prefix}/aos/capabilities/{{capability}}")
+async def aos_capability(capability: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.registry import AgentOSRegistry
+    agents = AgentOSRegistry().find_by_capability(ctx["organisation_id"], capability)
+    return {"capability": capability, "agents": [{"id": a.id, "agent_key": a.agent_key} for a in agents]}
+
+
+@app.post(f"{settings.api_prefix}/aos/execute")
+async def aos_execute(body: AOSExecuteRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from agent_os.runtime import AgentRuntime
+    from core.errors import ConflictError, ExecutionError, NotFoundError, ValidationError
+    try:
+        result = AgentRuntime().execute(
+            organisation_id=ctx["organisation_id"],
+            agent_id=body.agent_id,
+            input_data=body.input_data,
+            capability=body.capability,
+            task_id=body.task_id,
+        )
+        return result
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except (ValidationError, ConflictError) as e:
+        raise HTTPException(400, str(e))
+    except ExecutionError as e:
+        raise HTTPException(500, str(e))
+
+
 # --- Static UI (same origin — no API base URL required in the browser) ---
 _ROOT = Path(__file__).resolve().parent.parent
 _ASSETS = _ROOT / "assets"
