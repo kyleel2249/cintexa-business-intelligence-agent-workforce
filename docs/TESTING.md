@@ -16,3 +16,8 @@ Phase 1 suite covers:
 - idempotency
 - optimistic concurrency
 - log scrubbing
+
+Also run:
+```bash
+pytest tests/test_phase1_task_chat_persist.py tests/test_phase1_adversarial.py -v
+```

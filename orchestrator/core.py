@@ -52,13 +52,21 @@ class Orchestrator:
             requires_human_approval=plan.requires_human_approval,
         )
         self._tasks[task.task_id] = task
+        self._persist_task(task)
         return task
 
     def get_task(self, task_id: str) -> Optional[Task]:
-        return self._tasks.get(task_id)
+        if task_id in self._tasks:
+            return self._tasks[task_id]
+        loaded = self._load_task(task_id)
+        if loaded:
+            self._tasks[task_id] = loaded
+        return loaded
 
     def update_state(self, task_id: str, state: TaskState, **kwargs) -> Task:
-        task = self._tasks[task_id]
+        task = self.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task {task_id} not found")
         task.state = state
         task.updated_at = datetime.now(timezone.utc)
         for k, v in kwargs.items():
@@ -66,7 +74,94 @@ class Orchestrator:
                 setattr(task, k, v)
         if state == TaskState.COMPLETED:
             task.completed_at = datetime.now(timezone.utc)
+        self._tasks[task_id] = task
+        self._persist_task(task)
         return task
+
+    def _persist_task(self, task: Task) -> None:
+        try:
+            from persistence.unit_of_work import UnitOfWork
+            with UnitOfWork() as uow:
+                existing = uow.tasks.get(task.task_id, task.organisation_id)
+                state = task.state.value if hasattr(task.state, "value") else str(task.state)
+                plan = task.plan.model_dump(mode="json") if task.plan and hasattr(task.plan, "model_dump") else (task.plan or {})
+                if existing:
+                    uow.tasks.update(
+                        task.task_id,
+                        task.organisation_id,
+                        state=state,
+                        results=getattr(task, "results", {}) or {},
+                        evidence_ids=list(getattr(task, "evidence_ids", []) or []),
+                        errors=list(getattr(task, "errors", []) or []),
+                        plan=plan,
+                        objective=task.objective,
+                        context=getattr(task, "context", {}) or {},
+                        completed_at=getattr(task, "completed_at", None),
+                    )
+                else:
+                    uow.tasks.create(
+                        task_id=task.task_id,
+                        organisation_id=task.organisation_id,
+                        user_id=task.user_id,
+                        request=task.request,
+                        objective=task.objective or "",
+                        state=state,
+                        priority=task.priority.value if hasattr(task.priority, "value") else str(task.priority),
+                        plan=plan,
+                        results=getattr(task, "results", {}) or {},
+                        evidence_ids=list(getattr(task, "evidence_ids", []) or []),
+                        errors=list(getattr(task, "errors", []) or []),
+                        requires_human_approval=bool(getattr(task, "requires_human_approval", False)),
+                        context=getattr(task, "context", {}) or {},
+                    )
+                uow.audits.record(
+                    organisation_id=task.organisation_id,
+                    actor=task.user_id,
+                    action="task.persist",
+                    resource_type="task",
+                    resource_id=task.task_id,
+                    details={"state": state},
+                )
+        except Exception:
+            # Durable write failure must not leave caller unaware for critical paths;
+            # cache still holds task for current process.
+            raise
+
+    def _load_task(self, task_id: str) -> Optional[Task]:
+        try:
+            from persistence.unit_of_work import UnitOfWork
+            from database.models import AgentTask as AgentTaskRow
+            with UnitOfWork() as uow:
+                row = uow.session.get(AgentTaskRow, task_id)
+                if not row:
+                    return None
+                from schemas.tasks import Task as TaskModel
+                from schemas.common import Priority
+                try:
+                    state = TaskState(row.state)
+                except Exception:
+                    state = TaskState.PENDING
+                try:
+                    pri = Priority(row.priority) if row.priority else Priority.MEDIUM
+                except Exception:
+                    pri = Priority.MEDIUM
+                task = TaskModel(
+                    task_id=row.task_id,
+                    request=row.request,
+                    objective=row.objective or "",
+                    organisation_id=row.organisation_id,
+                    user_id=row.user_id,
+                    priority=pri,
+                    state=state,
+                    context=row.context or {},
+                    results=row.results or {},
+                    evidence_ids=row.evidence_ids or [],
+                    errors=row.errors or [],
+                    requires_human_approval=bool(row.requires_human_approval),
+                )
+                return task
+        except Exception:
+            return None
 
     async def run(self, task_id: str) -> Task:
         task = self._tasks.get(task_id)

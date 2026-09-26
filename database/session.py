@@ -16,8 +16,8 @@ _SessionLocal: Optional[sessionmaker] = None
 
 
 def get_database_url() -> str:
-    settings = get_settings()
-    url = getattr(settings, "database_url", None) or "sqlite:///./cintexa_bi.db"
+    import os
+    url = os.environ.get("DATABASE_URL") or getattr(get_settings(), "database_url", None) or "sqlite:///./cintexa_bi.db"
     # Sync engine cannot use aiosqlite driver
     if "+aiosqlite" in url:
         url = url.replace("sqlite+aiosqlite://", "sqlite://", 1)

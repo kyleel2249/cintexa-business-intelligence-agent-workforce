@@ -15,13 +15,13 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_DB.name}"
 
 @pytest.fixture(scope="module")
 def db_ready():
-    from database.session import reset_engine, init_db, get_database_url
-
-    reset_engine()
-    # Force URL from env
+    from database.session import reset_engine, init_db
     import config.settings as settings_mod
 
-    settings_mod.get_settings.cache_clear() if hasattr(settings_mod.get_settings, "cache_clear") else None
+    os.environ["DATABASE_URL"] = f"sqlite:///{_DB.name}"
+    if hasattr(settings_mod.get_settings, "cache_clear"):
+        settings_mod.get_settings.cache_clear()
+    reset_engine()
     init_db(f"sqlite:///{_DB.name}")
     yield
     reset_engine()
@@ -112,7 +112,8 @@ def test_workflow_checkpoint_recovery(db_ready):
     from database.session import reset_engine, get_engine, get_session_factory
 
     reset_engine()
-    get_engine(f"sqlite:///{_DB.name}")
+    # Rebind to the same test DB URL (env DATABASE_URL)
+    get_engine()
     get_session_factory()
 
     with UnitOfWork() as uow:
@@ -144,7 +145,8 @@ def test_events_durable(db_ready):
     assert any(e["event_type"] == "mission.created" for e in hist)
 
     reset_engine()
-    get_engine(f"sqlite:///{_DB.name}")
+    # Rebind to the same test DB URL (env DATABASE_URL)
+    get_engine()
     get_session_factory()
     hist2 = bus.history(organisation_id="org-a", limit=10)
     assert any(e["event_type"] == "mission.created" for e in hist2)
@@ -191,7 +193,8 @@ def test_mission_restart_recovery(db_ready):
     # Process "dies"
     mgr.clear_cache()
     reset_engine()
-    get_engine(f"sqlite:///{_DB.name}")
+    # Rebind to the same test DB URL (env DATABASE_URL)
+    get_engine()
     get_session_factory()
 
     mgr2 = MissionManager()

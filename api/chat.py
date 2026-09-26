@@ -50,8 +50,55 @@ class ChatService:
         self._sessions: Dict[str, ChatSession] = {}
         self.llm = get_llm()
 
-    def get_session(self, session_id: str) -> Optional[ChatSession]:
-        return self._sessions.get(session_id)
+    def get_session(self, session_id: str, organisation_id: Optional[str] = None) -> Optional[ChatSession]:
+        if session_id in self._sessions:
+            s = self._sessions[session_id]
+            if organisation_id and s.organisation_id != organisation_id:
+                return None
+            return s
+        return self._load_session(session_id, organisation_id)
+
+    def _persist_session(self, session: ChatSession) -> None:
+        try:
+            from persistence.unit_of_work import UnitOfWork
+            with UnitOfWork() as uow:
+                msgs = [m.model_dump(mode="json") if hasattr(m, "model_dump") else m for m in session.messages]
+                uow.conversations.save(
+                    session_id=session.session_id,
+                    organisation_id=session.organisation_id,
+                    user_id=session.user_id,
+                    title=session.title,
+                    messages=msgs,
+                )
+        except Exception:
+            raise
+
+    def _load_session(self, session_id: str, organisation_id: Optional[str] = None) -> Optional[ChatSession]:
+        try:
+            from persistence.unit_of_work import UnitOfWork
+            with UnitOfWork() as uow:
+                if organisation_id:
+                    row = uow.conversations.get(session_id, organisation_id)
+                else:
+                    from database.models import ConversationRecord
+                    row = uow.session.get(ConversationRecord, session_id)
+                if not row:
+                    return None
+                msgs = []
+                for m in (row.messages or []):
+                    if isinstance(m, dict):
+                        msgs.append(ChatMessage(**{k: v for k, v in m.items() if k in ChatMessage.model_fields}))
+                session = ChatSession(
+                    session_id=row.session_id,
+                    organisation_id=row.organisation_id,
+                    user_id=row.user_id,
+                    title=row.title or "New chat",
+                    messages=msgs,
+                )
+                self._sessions[session_id] = session
+                return session
+        except Exception:
+            return None
 
     def list_sessions(self, organisation_id: str, user_id: str) -> List[ChatSession]:
         return [
@@ -69,6 +116,7 @@ class ChatService:
             title=title,
         )
         self._sessions[sid] = session
+        self._persist_session(session)
         return session
 
     async def send(self, organisation_id: str, user_id: str, req: ChatRequest, api_key: Optional[str] = None) -> Dict[str, Any]:

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     app_name: str = "CINTEXA Business Intelligence"
     app_env: str = "development"
+    environment: str = "development"  # development|test|staging|production
+    auth_dev_fallback: bool = True  # header identity only in non-production
     debug: bool = True
     secret_key: str = "change-me-to-a-long-random-string"
     api_prefix: str = "/bi"

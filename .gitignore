@@ -1,1 +1,6 @@
 __pycache__/
+*.pyc
+.venv/
+cintexa_bi.db
+*.db
+.env

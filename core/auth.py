@@ -91,7 +91,7 @@ def resolve_identity(
 ) -> dict:
     """Resolve request identity. Headers alone are not proof in production."""
     settings = get_settings()
-    env = getattr(settings, "environment", "development")
+    env = getattr(settings, "environment", None) or getattr(settings, "app_env", "development")
     org = organisation_id or "default-org"
     uid = user_id or "default-user"
     if env not in ("development", "test") and not getattr(settings, "auth_dev_fallback", False):
