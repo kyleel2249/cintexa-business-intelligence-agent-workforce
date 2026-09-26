@@ -144,3 +144,54 @@ def test_idempotency_store(db_ready):
     assert s.get("k1", "org1") is None
     s.put("k1", {"status": 200, "body": {"id": "1"}}, organisation_id="org1")
     assert s.get("k1", "org1")["body"]["id"] == "1"
+
+
+def test_concurrent_claim_no_duplicates(db_ready):
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from cintexa_platform.workers import JobQueue, WorkerRegistry
+
+    for i in range(4):
+        WorkerRegistry().register(f"cw{i}")
+    q = JobQueue()
+    for i in range(12):
+        q.enqueue("c.op", {"i": i}, organisation_id="orgC")
+    claimed = []
+
+    def worker(wid):
+        got = []
+        while True:
+            j = q.claim(wid)
+            if not j:
+                break
+            got.append(j["job_id"])
+            q.complete(j["job_id"], wid, {})
+        return got
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futs = [ex.submit(worker, f"cw{i}") for i in range(4)]
+        for f in as_completed(futs):
+            claimed.extend(f.result())
+    assert len(claimed) == 12
+    assert len(set(claimed)) == 12
+
+
+def test_stale_owner_cannot_complete(db_ready):
+    from datetime import datetime, timedelta
+    from cintexa_platform.workers import JobQueue, WorkerRegistry
+    from cintexa_platform.models_db import PlatformJob
+    from persistence.unit_of_work import UnitOfWork
+    from core.errors import ConflictError
+
+    WorkerRegistry().register("sa")
+    WorkerRegistry().register("sb")
+    q = JobQueue()
+    j = q.enqueue("stale", {"x": 1}, organisation_id="orgS")
+    c1 = q.claim("sa", visibility_timeout_sec=1)
+    with UnitOfWork() as uow:
+        row = uow.session.get(PlatformJob, c1["job_id"])
+        row.lease_expires_at = datetime.utcnow() - timedelta(seconds=5)
+    c2 = q.claim("sb")
+    assert c2["job_id"] == c1["job_id"]
+    with pytest.raises(ConflictError):
+        q.complete(c1["job_id"], "sa", {})
+    q.complete(c2["job_id"], "sb", {"ok": True})

@@ -103,10 +103,12 @@ class JobQueue:
         return {"job_id": jid, "status": "PENDING", "deduped": False}
 
     def claim(self, worker_id: str, *, queue: str = "default", visibility_timeout_sec: int = 60) -> Optional[dict]:
+        """Atomic claim: select candidate then UPDATE ... WHERE status still claimable."""
         now = datetime.utcnow()
+        lease_until = now + timedelta(seconds=visibility_timeout_sec)
         with UnitOfWork() as uow:
-            # reclaim expired leases
-            expired = (
+            # Reclaim expired leases back to PENDING
+            (
                 uow.session.query(PlatformJob)
                 .filter(
                     PlatformJob.queue == queue,
@@ -114,33 +116,59 @@ class JobQueue:
                     PlatformJob.lease_expires_at != None,  # noqa: E711
                     PlatformJob.lease_expires_at < now,
                 )
-                .all()
+                .update(
+                    {
+                        PlatformJob.status: "PENDING",
+                        PlatformJob.owner: None,
+                        PlatformJob.lease_expires_at: None,
+                    },
+                    synchronize_session=False,
+                )
             )
-            for j in expired:
-                j.status = "PENDING"
-                j.owner = None
-                j.lease_expires_at = None
+            uow.session.flush()
 
-            job = (
-                uow.session.query(PlatformJob)
-                .filter_by(queue=queue, status="PENDING")
-                .order_by(PlatformJob.priority.asc(), PlatformJob.created_at.asc())
-                .first()
-            )
-            if not job:
-                return None
-            job.status = "CLAIMED"
-            job.owner = worker_id
-            job.attempts = (job.attempts or 0) + 1
-            job.lease_expires_at = now + timedelta(seconds=visibility_timeout_sec)
-            job.updated_at = now
-            return {
-                "job_id": job.job_id,
-                "job_type": job.job_type,
-                "payload": job.payload or {},
-                "attempts": job.attempts,
-                "organisation_id": job.organisation_id,
-            }
+            # Try a few candidates under contention
+            for _ in range(8):
+                job = (
+                    uow.session.query(PlatformJob)
+                    .filter_by(queue=queue, status="PENDING")
+                    .order_by(PlatformJob.priority.asc(), PlatformJob.created_at.asc())
+                    .first()
+                )
+                if not job:
+                    return None
+                jid = job.job_id
+                prev_attempts = job.attempts or 0
+                # Atomic conditional claim
+                updated = (
+                    uow.session.query(PlatformJob)
+                    .filter(
+                        PlatformJob.job_id == jid,
+                        PlatformJob.status == "PENDING",
+                    )
+                    .update(
+                        {
+                            PlatformJob.status: "CLAIMED",
+                            PlatformJob.owner: worker_id,
+                            PlatformJob.attempts: prev_attempts + 1,
+                            PlatformJob.lease_expires_at: lease_until,
+                            PlatformJob.updated_at: now,
+                        },
+                        synchronize_session=False,
+                    )
+                )
+                if updated == 1:
+                    uow.session.expire_all()
+                    job = uow.session.get(PlatformJob, jid)
+                    return {
+                        "job_id": job.job_id,
+                        "job_type": job.job_type,
+                        "payload": job.payload or {},
+                        "attempts": job.attempts,
+                        "organisation_id": job.organisation_id,
+                    }
+                # lost race — try next
+            return None
 
     def complete(self, job_id: str, worker_id: str, result: Optional[Dict] = None) -> dict:
         with UnitOfWork() as uow:
