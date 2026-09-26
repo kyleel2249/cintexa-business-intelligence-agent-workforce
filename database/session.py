@@ -82,6 +82,7 @@ def session_scope(factory: Optional[sessionmaker] = None) -> Generator[Session, 
 def init_db(url: Optional[str] = None) -> Engine:
     """Create all tables from models (dev/test). Prefer Alembic in production."""
     from database.models import Base
+    import agent_os.models_db  # noqa: F401 — register AOS tables
 
     engine = get_engine(url)
     Base.metadata.create_all(bind=engine)
