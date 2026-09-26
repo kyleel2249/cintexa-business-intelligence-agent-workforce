@@ -159,3 +159,60 @@ class ChangeFreeze:
 
 change_freeze = ChangeFreeze()
 default_policy = GovernancePolicy()
+
+
+def _sync_durable_freeze():
+    """Best-effort sync process freeze to durable store for multi-worker visibility."""
+    try:
+        from cintexa_platform.coordination import DurableFreeze
+        df = DurableFreeze()
+        st = change_freeze.status()
+        if st.get("emergency_stop"):
+            df.emergency(st.get("reason") or "", by="process")
+        elif st.get("frozen"):
+            df.freeze(st.get("reason") or "", by="process")
+        else:
+            # only clear if durable not emergency without auth - skip auto-clear
+            pass
+    except Exception:
+        pass
+
+
+# Patch methods
+_orig_freeze = change_freeze.freeze
+_orig_unfreeze = change_freeze.unfreeze
+_orig_emergency = change_freeze.emergency
+_orig_clear = change_freeze.clear_emergency
+
+def _freeze(reason: str = "manual"):
+    r = _orig_freeze(reason)
+    _sync_durable_freeze()
+    return r
+
+def _unfreeze():
+    r = _orig_unfreeze()
+    try:
+        from cintexa_platform.coordination import DurableFreeze
+        DurableFreeze().unfreeze(by="process")
+    except Exception:
+        pass
+    return r
+
+def _emergency(reason: str = "emergency"):
+    r = _orig_emergency(reason)
+    _sync_durable_freeze()
+    return r
+
+def _clear_emergency(*, authorized: bool = False):
+    r = _orig_clear(authorized=authorized)
+    try:
+        from cintexa_platform.coordination import DurableFreeze
+        DurableFreeze().clear_emergency(authorized=authorized, by="process")
+    except Exception:
+        pass
+    return r
+
+change_freeze.freeze = _freeze
+change_freeze.unfreeze = _unfreeze
+change_freeze.emergency = _emergency
+change_freeze.clear_emergency = _clear_emergency

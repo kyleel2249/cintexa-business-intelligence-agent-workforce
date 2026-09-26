@@ -772,6 +772,25 @@ async def api_info():
 
 
 
+
+# --- Platform readiness ---
+@app.get(f"{settings.api_prefix}/platform/live")
+async def platform_live():
+    return {"status": "live"}
+
+
+@app.get(f"{settings.api_prefix}/platform/ready")
+async def platform_ready():
+    from database.session import get_engine
+    try:
+        eng = get_engine()
+        with eng.connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+        return {"status": "ready", "database": "ok"}
+    except Exception as e:
+        raise HTTPException(503, f"not ready: {e}")
+
+
 # --- Phase 7 Evolution API ---
 @app.get(f"{settings.api_prefix}/evo/freeze")
 async def evo_freeze_status(ctx: Dict[str, str] = Depends(get_org_and_user)):

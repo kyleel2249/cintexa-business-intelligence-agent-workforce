@@ -59,3 +59,17 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_production_settings(settings: Settings) -> None:
+    """Fail fast when production is misconfigured."""
+    env = (settings.environment or settings.app_env or "development").lower()
+    if env != "production":
+        return
+    if settings.secret_key in ("", "change-me-to-a-long-random-string"):
+        raise RuntimeError("PRODUCTION: secret_key must be set")
+    if settings.auth_dev_fallback:
+        raise RuntimeError("PRODUCTION: auth_dev_fallback must be false")
+    url = settings.database_url or ""
+    if url.startswith("sqlite"):
+        raise RuntimeError("PRODUCTION: sqlite is not allowed; use PostgreSQL")

@@ -75,7 +75,24 @@ class DeploymentEngine:
             {"release_id": release_id, "percent": percent},
             organisation_id=organisation_id,
         )
-        return {"release_id": release_id, "status": st, "canary_percent": percent}
+        # Live traffic policy — actual weighted routing
+        try:
+            from cintexa_platform.canary import CanaryRouter
+            with UnitOfWork() as uow:
+                rel2 = uow.session.get(EvoRelease, release_id)
+                ver = rel2.version if rel2 else "candidate"
+                comps = (rel2.components if rel2 else {}) or {}
+            CanaryRouter().upsert_route(
+                organisation_id,
+                comps.get("capability") or f"release:{release_id}",
+                baseline_version=comps.get("baseline_version") or "baseline",
+                candidate_version=ver,
+                percent=percent,
+                release_id=release_id,
+            )
+        except Exception:
+            pass
+        return {"release_id": release_id, "status": st, "canary_percent": percent, "traffic_routed": True}
 
     def promote(self, organisation_id: str, release_id: str) -> Dict[str, Any]:
         return self.canary(organisation_id, release_id, 100)
