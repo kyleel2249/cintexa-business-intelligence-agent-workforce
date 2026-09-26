@@ -89,6 +89,7 @@ def init_db(url: Optional[str] = None) -> Engine:
     import observability.models_db  # noqa: F401 — register OBS tables
     import evolution.models_db  # noqa: F401 — register EVO tables
     import cintexa_platform.models_db  # noqa: F401 — register PLATFORM tables
+    import external_fabric.models_db  # noqa: F401 — register EXT tables
 
     engine = get_engine(url)
     Base.metadata.create_all(bind=engine)
