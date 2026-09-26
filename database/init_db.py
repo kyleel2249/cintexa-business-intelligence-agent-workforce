@@ -1,21 +1,14 @@
-"""Initialise database schema."""
+"""Initialise database schema (development / test helper)."""
 
-import asyncio
-
-from sqlalchemy.ext.asyncio import create_async_engine
-
-from config.settings import get_settings
-from database.models import Base
+from database.session import init_db, get_database_url
 
 
-async def init_models() -> None:
-    settings = get_settings()
-    engine = create_async_engine(settings.database_url, echo=settings.debug)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await engine.dispose()
-    print("CINTEXA BI database schema created.")
+def main() -> None:
+    url = get_database_url()
+    print(f"Initialising database: {url}")
+    init_db(url)
+    print("Schema created.")
 
 
 if __name__ == "__main__":
-    asyncio.run(init_models())
+    main()

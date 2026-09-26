@@ -106,15 +106,57 @@ class MemoryAgent(BaseAgent):
             "deletable": True,
         }
         self._memory[org_id][category].append(item)
+        try:
+            from persistence.unit_of_work import UnitOfWork
+            with UnitOfWork() as uow:
+                uow.memories.create(
+                    organisation_id=org_id,
+                    content=item.get("content"),
+                    memory_type=category,
+                    source=str(item.get("source") or "agent"),
+                    task_id=item.get("task_id"),
+                    metadata={"memory_id": item["memory_id"], "permissions": item.get("permissions")},
+                )
+        except Exception:
+            pass  # in-memory retained; durable write best-effort for agent path
         return item
 
     def _retrieve(self, org_id: str, category: str, query: Optional[str] = None) -> List[Dict[str, Any]]:
         self._ensure(org_id)
-        items = self._memory[org_id][category]
-        if not query:
-            return list(items)
-        q = query.lower()
-        return [i for i in items if q in str(i.get("content", "")).lower()]
+        items = list(self._memory[org_id][category])
+        try:
+            from persistence.unit_of_work import UnitOfWork
+            with UnitOfWork() as uow:
+                if query:
+                    db_items = uow.memories.search(org_id, query, memory_type=category)
+                else:
+                    db_items = uow.memories.list_for_org(org_id, memory_type=category)
+                for row in db_items:
+                    items.append({
+                        "memory_id": row.memory_id,
+                        "organisation_id": row.organisation_id,
+                        "category": row.memory_type,
+                        "content": row.content,
+                        "source": row.source,
+                        "task_id": row.task_id,
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                    })
+        except Exception:
+            pass
+        # de-dupe by memory_id
+        seen = set()
+        out = []
+        for i in items:
+            mid = i.get("memory_id")
+            if mid and mid in seen:
+                continue
+            if mid:
+                seen.add(mid)
+            if query:
+                if query.lower() not in str(i.get("content", "")).lower():
+                    continue
+            out.append(i)
+        return out
 
     def _delete(self, org_id: str, category: str, memory_id: Optional[str]) -> bool:
         self._ensure(org_id)

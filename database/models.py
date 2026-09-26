@@ -283,3 +283,162 @@ class OrchestrationDecisionRecord(Base):
     confidence = Column(Float, default=0.0)
     payload = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Phase 1 durable foundation extensions ───────────────────────
+
+class Membership(Base):
+    """User ↔ Organisation membership with role (multi-tenant boundary)."""
+    __tablename__ = "memberships"
+    id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), ForeignKey("organisations.id"), nullable=False, index=True)
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    role = Column(String(64), default="member")  # owner | admin | member | viewer
+    status = Column(String(32), default="active")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_memberships_org_user", "organisation_id", "user_id", unique=True),
+    )
+
+
+class WorkflowRecord(Base):
+    """Durable workflow / mission execution state."""
+    __tablename__ = "workflows"
+    workflow_id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    workflow_type = Column(String(64), default="mission")
+    objective = Column(Text, default="")
+    status = Column(String(32), default="CREATED", index=True)
+    current_state = Column(String(64), default="")
+    checkpoint_id = Column(String(64), nullable=True)
+    result = Column(JSON, default=dict)
+    error = Column(Text, nullable=True)
+    priority = Column(String(16), default="NORMAL")
+    version = Column(Integer, default=1)  # optimistic concurrency
+    idempotency_key = Column(String(128), nullable=True, index=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_workflows_org_status", "organisation_id", "status"),
+        Index("ix_workflows_org_idem", "organisation_id", "idempotency_key"),
+    )
+
+
+class WorkflowStepRecord(Base):
+    __tablename__ = "workflow_steps"
+    step_id = Column(String(64), primary_key=True)
+    workflow_id = Column(String(64), nullable=False, index=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    task_id = Column(String(64), nullable=True, index=True)
+    sequence = Column(Integer, default=0)
+    objective = Column(Text, default="")
+    status = Column(String(32), default="PENDING", index=True)
+    dependencies = Column(JSON, default=list)
+    assigned_agent = Column(String(64), nullable=True)
+    result = Column(JSON, default=dict)
+    error = Column(Text, nullable=True)
+    execution_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_workflow_steps_wf_seq", "workflow_id", "sequence"),
+    )
+
+
+class CheckpointRecord(Base):
+    __tablename__ = "checkpoints"
+    checkpoint_id = Column(String(64), primary_key=True)
+    workflow_id = Column(String(64), nullable=False, index=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    current_step = Column(String(64), nullable=True)
+    completed_steps = Column(JSON, default=list)
+    pending_steps = Column(JSON, default=list)
+    state_refs = Column(JSON, default=dict)
+    execution_metadata = Column(JSON, default=dict)
+    version = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_checkpoints_wf", "workflow_id", "version"),
+    )
+
+
+class ConversationRecord(Base):
+    __tablename__ = "conversations"
+    session_id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    title = Column(String(255), default="New chat")
+    messages = Column(JSON, default=list)
+    mission_id = Column(String(64), nullable=True, index=True)
+    status = Column(String(32), default="active")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_conversations_org_user", "organisation_id", "user_id"),
+    )
+
+
+class MemoryRecord(Base):
+    __tablename__ = "memories"
+    memory_id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(String(64), nullable=True, index=True)
+    memory_type = Column(String(64), default="working", index=True)  # short_term|working|long_term|user_provided|derived
+    content = Column(JSON, default=dict)
+    source = Column(String(128), default="agent")
+    source_ref = Column(String(128), nullable=True)
+    task_id = Column(String(64), nullable=True, index=True)
+    mission_id = Column(String(64), nullable=True, index=True)
+    status = Column(String(32), default="active")
+    metadata_json = Column(JSON, default=dict)
+    version = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_memories_org_type", "organisation_id", "memory_type"),
+    )
+
+
+class DurableEvent(Base):
+    """Durable event log (Phase 1 foundation for streaming in later phases)."""
+    __tablename__ = "durable_events"
+    event_id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(128), nullable=False, index=True)
+    aggregate_id = Column(String(64), nullable=True, index=True)
+    workflow_id = Column(String(64), nullable=True, index=True)
+    task_id = Column(String(64), nullable=True, index=True)
+    payload = Column(JSON, default=dict)
+    correlation_id = Column(String(64), nullable=True, index=True)
+    causation_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_durable_events_org_type", "organisation_id", "event_type"),
+        Index("ix_durable_events_org_created", "organisation_id", "created_at"),
+    )
+
+
+class ArtifactRecord(Base):
+    __tablename__ = "artifacts"
+    artifact_id = Column(String(64), primary_key=True)
+    organisation_id = Column(String(64), nullable=False, index=True)
+    name = Column(String(255), default="")
+    artifact_type = Column(String(64), default="file")
+    storage_ref = Column(String(512), nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    task_id = Column(String(64), nullable=True)
+    workflow_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
