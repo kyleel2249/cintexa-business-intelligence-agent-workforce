@@ -180,3 +180,43 @@ def test_cross_tenant_session(db_ready):
     s = eng.create_session("orgA")
     with pytest.raises(NotFoundError):
         eng.navigate(s["session_id"], "orgB", "https://example.com/", permissions={"*"})
+
+
+def test_rate_limit_and_url_matrix(db_ready):
+    from external_fabric.actions import ExternalActionService
+    from external_fabric.governor import InteractionGovernor
+    from external_fabric.url_security import validate_url, UrlSecurityError
+
+    for bad in [
+        "javascript:alert(1)",
+        "https://127.0.0.1/",
+        "https://169.254.169.254/",
+        "file:///etc/passwd",
+    ]:
+        with pytest.raises(UrlSecurityError):
+            validate_url(bad)
+
+    gov = InteractionGovernor()
+    gov.limits["SOCIAL_LIKE"] = (3, 3600)
+    svc = ExternalActionService()
+    svc.governor = gov
+    perms = {"social:react", "*"}
+    statuses = []
+    for i in range(6):
+        r = svc.request("orgRL", "SOCIAL_LIKE", target=f"t{i}", permissions=perms)
+        statuses.append(r.get("status") or r.get("reason"))
+    assert any(s == "BLOCK" or s == "RATE_LIMIT" for s in statuses) or statuses.count("COMPLETED") <= 3
+
+
+def test_kill_switch_blocks_writes(db_ready):
+    from external_fabric.actions import ExternalActionService
+    from external_fabric.kill_switch import ExternalKillSwitch
+
+    ks = ExternalKillSwitch()
+    ks.activate(scope="global", reason="verify")
+    r = ExternalActionService().request(
+        "orgKS", "SOCIAL_LIKE", target="x", permissions={"social:react", "*"}
+    )
+    assert r["status"] == "BLOCK"
+    assert "KILL" in r["reason"]
+    ks.deactivate(scope="global", authorized=True)

@@ -34,3 +34,21 @@ Agent → Capability → Governor (rate/dupe/budget/kill) → URL security
 - `WebResearchEngine.research`
 - `MediaEngine.analyze_video`
 - `ExternalKillSwitch.activate / deactivate`
+
+
+## Verification status (independent)
+
+| Area | Status |
+|------|--------|
+| SSRF / scheme matrix | Verified |
+| Anti-spam exact duplicate | Verified |
+| Rate limits | Verified |
+| Kill switch global/org | Verified |
+| CAPTCHA pause (no bypass) | Verified |
+| External content as DATA | Verified |
+| Research ACCESS_FAILED | Verified |
+| Tenant session isolation | Verified |
+| Live Playwright browser | **Not verified** (mock provider only) |
+| Semantic near-duplicate | **Limited** (hash/normalized exact, not embeddings) |
+| Real social platforms | **Not verified** |
+| Multi-worker external writes | **Partial** (idempotency keys; not full worker matrix) |
