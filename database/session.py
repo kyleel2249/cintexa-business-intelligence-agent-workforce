@@ -86,6 +86,7 @@ def init_db(url: Optional[str] = None) -> Engine:
     import knowledge_fabric.models_db  # noqa: F401 — register KF tables
     import tool_fabric.models_db  # noqa: F401 — register TF tables
     import reliability.models_db  # noqa: F401 — register REL tables
+    import observability.models_db  # noqa: F401 — register OBS tables
 
     engine = get_engine(url)
     Base.metadata.create_all(bind=engine)

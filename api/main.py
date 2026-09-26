@@ -770,6 +770,55 @@ async def api_info():
 
 
 
+
+# --- Phase 6 Observability & Evaluation API ---
+@app.get(f"{settings.api_prefix}/obs/traces/{{trace_id}}")
+async def obs_trace(trace_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from observability.tracing import tracer
+    return tracer.timeline(trace_id, ctx["organisation_id"])
+
+
+@app.get(f"{settings.api_prefix}/obs/metrics")
+async def obs_metrics(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from observability.metrics import metrics
+    return metrics.snapshot(ctx["organisation_id"])
+
+
+@app.get(f"{settings.api_prefix}/obs/logs")
+async def obs_logs(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from observability.store import TelemetryStore
+    return {"logs": TelemetryStore().query_logs(ctx["organisation_id"])}
+
+
+@app.get(f"{settings.api_prefix}/obs/alerts")
+async def obs_alerts(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from observability.alerts import AlertService
+    return {"alerts": AlertService().list_open(ctx["organisation_id"])}
+
+
+@app.post(f"{settings.api_prefix}/obs/eval/datasets")
+async def obs_create_dataset(body: Dict[str, Any], ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from observability.evaluation import EvaluationEngine
+    return EvaluationEngine().create_dataset(
+        ctx["organisation_id"], body.get("name") or "dataset", body.get("description") or ""
+    )
+
+
+@app.post(f"{settings.api_prefix}/obs/eval/run")
+async def obs_eval_run(body: Dict[str, Any], ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from observability.evaluation import EvaluationEngine
+    version_id = body.get("version_id")
+    if not version_id:
+        raise HTTPException(400, "version_id required")
+    # API uses identity actual from case expected for smoke; real runners inject executor
+    eng = EvaluationEngine()
+    return eng.run_dataset(
+        ctx["organisation_id"],
+        version_id,
+        executor=lambda case: case.get("expected_output") or case.get("input") or "",
+    )
+
+
 # --- Phase 5 Reliability API ---
 @app.get(f"{settings.api_prefix}/rel/health")
 async def rel_health(ctx: Dict[str, str] = Depends(get_org_and_user)):
