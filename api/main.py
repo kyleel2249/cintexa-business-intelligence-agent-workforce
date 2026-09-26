@@ -768,6 +768,103 @@ async def api_info():
 
 
 
+
+# --- Phase 4 Tool Fabric API ---
+class TFInvokeRequest(BaseModel):
+    tool_slug: str
+    input_data: Dict[str, Any] = Field(default_factory=dict)
+    agent_key: Optional[str] = None
+    task_id: Optional[str] = None
+    workflow_id: Optional[str] = None
+    dry_run: bool = False
+    auto_approve: bool = False
+
+
+@app.post(f"{settings.api_prefix}/tf/bootstrap")
+async def tf_bootstrap(ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from tool_fabric.registry import ToolRegistry
+    n = ToolRegistry().bootstrap_builtins("__system__")
+    return {"bootstrapped": n}
+
+
+@app.get(f"{settings.api_prefix}/tf/tools")
+async def tf_list_tools(capability: Optional[str] = None, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from tool_fabric.registry import ToolRegistry
+    tools = ToolRegistry().discover(ctx["organisation_id"], capability=capability)
+    return {
+        "tools": [
+            {
+                "tool_id": t.tool_id,
+                "slug": t.slug,
+                "name": t.name,
+                "category": t.category,
+                "capabilities": t.capabilities,
+                "risk": t.risk,
+                "requires_approval": t.requires_approval,
+                "enabled": t.enabled,
+            }
+            for t in tools
+        ]
+    }
+
+
+@app.post(f"{settings.api_prefix}/tf/invoke")
+async def tf_invoke(body: TFInvokeRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from tool_fabric.engine import ToolExecutionEngine
+    from tool_fabric.registry import ToolRegistry
+    from core.errors import AuthorizationError, ExecutionError, NotFoundError, ValidationError
+    reg = ToolRegistry()
+    reg.bootstrap_builtins("__system__")
+    eng = ToolExecutionEngine(reg)
+    # grant broad perms for configured agents in API layer; production should use durable grants
+    if body.agent_key:
+        eng.grant_agent(
+            body.agent_key,
+            [
+                "READ_FILE", "WRITE_FILE", "EXECUTE_CODE", "EXECUTE_SHELL",
+                "NETWORK_ACCESS", "READ_REPOSITORY", "BROWSER_ACCESS",
+                "DEPLOY_APPLICATION", "DATABASE_READ", "USE_EXTERNAL_SERVICE",
+            ],
+        )
+    try:
+        return eng.invoke(
+            organisation_id=ctx["organisation_id"],
+            tool_slug=body.tool_slug,
+            input_data=body.input_data,
+            agent_key=body.agent_key or "api",
+            user_id=ctx["user_id"],
+            task_id=body.task_id,
+            workflow_id=body.workflow_id,
+            dry_run=body.dry_run,
+            auto_approve=body.auto_approve,
+        )
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except (AuthorizationError, ValidationError) as e:
+        raise HTTPException(403 if isinstance(e, AuthorizationError) else 400, str(e))
+    except ExecutionError as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get(f"{settings.api_prefix}/tf/executions/{{execution_id}}")
+async def tf_get_execution(execution_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from tool_fabric.engine import ToolExecutionEngine
+    rec = ToolExecutionEngine().get_execution(execution_id, ctx["organisation_id"])
+    if not rec:
+        raise HTTPException(404, "Execution not found")
+    return rec
+
+
+@app.post(f"{settings.api_prefix}/tf/executions/{{execution_id}}/cancel")
+async def tf_cancel(execution_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from tool_fabric.engine import ToolExecutionEngine
+    from core.errors import NotFoundError
+    try:
+        return ToolExecutionEngine().cancel(execution_id, ctx["organisation_id"])
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
 # --- Phase 3 Knowledge Fabric API ---
 class KFIngestRequest(BaseModel):
     content: str

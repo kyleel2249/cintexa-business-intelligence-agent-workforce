@@ -126,6 +126,26 @@ BUILTIN_TOOLS = [
         "input_schema": {"required": ["target"]},
         "description": "Protected deployment operation",
     },
+    {
+        "slug": "db.query",
+        "name": "Database Query",
+        "category": "database",
+        "capabilities": ["database_read"],
+        "permissions": ["DATABASE_READ"],
+        "risk": "high",
+        "input_schema": {"required": ["sql"]},
+        "description": "Read-only SQL against authorized connection (policy gated)",
+    },
+    {
+        "slug": "computer.inspect",
+        "name": "Computer Inspect",
+        "category": "computer",
+        "capabilities": ["computer_use"],
+        "permissions": ["USE_EXTERNAL_SERVICE"],
+        "risk": "critical",
+        "input_schema": {"required": []},
+        "description": "Computer-use abstraction (null provider by default)",
+    },
 ]
 
 

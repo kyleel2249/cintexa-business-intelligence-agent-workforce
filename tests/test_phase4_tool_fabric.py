@@ -53,6 +53,8 @@ def engine(db_ready):
             "READ_REPOSITORY",
             "BROWSER_ACCESS",
             "DEPLOY_APPLICATION",
+            "DATABASE_READ",
+            "USE_EXTERNAL_SERVICE",
         ],
     )
     return eng
@@ -284,3 +286,71 @@ def test_e2e_tool_to_knowledge(engine, db_ready):
     hits = kf.search(organisation_id="org-k", query="Market grew 18%", strategy="lexical", top_k=3)
     assert hits["hits"]
     assert doc["document_id"]
+
+
+def test_cancel_pending_approval(engine):
+    res = engine.invoke(
+        organisation_id="org-c",
+        tool_slug="deploy.apply",
+        input_data={"target": "staging"},
+        agent_key="worker",
+    )
+    assert res["status"] == "PENDING_APPROVAL"
+    out = engine.cancel(res["execution_id"], "org-c")
+    assert out["status"] == "CANCELLED"
+    assert out["cancelled"] is True
+
+
+def test_db_query_select_only(engine):
+    from core.errors import AuthorizationError, ExecutionError
+
+    ok = engine.invoke(
+        organisation_id="org1",
+        tool_slug="db.query",
+        input_data={"sql": "SELECT 1"},
+        agent_key="worker",
+    )
+    assert ok["status"] == "COMPLETED"
+    with pytest.raises((AuthorizationError, ExecutionError)):
+        engine.invoke(
+            organisation_id="org1",
+            tool_slug="db.query",
+            input_data={"sql": "DROP TABLE users"},
+            agent_key="worker",
+        )
+
+
+def test_secret_redaction(db_ready):
+    from tool_fabric.secrets import SecretProvider
+
+    sp = SecretProvider()
+    sp.put("org1", "API_TOKEN", "super-secret-value-xyz")
+    text = "token is super-secret-value-xyz in log"
+    assert "super-secret-value-xyz" not in sp.redact(text, "org1")
+    assert "[REDACTED:API_TOKEN]" in sp.redact(text, "org1")
+
+
+def test_tf_api(db_ready):
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    with TestClient(app) as client:
+        h = {"X-Organisation-Id": "org-tf", "X-User-Id": "u"}
+        assert client.post("/bi/tf/bootstrap", headers=h).status_code == 200
+        tools = client.get("/bi/tf/tools", headers=h)
+        assert tools.status_code == 200
+        assert any(t["slug"] == "code.python" for t in tools.json()["tools"])
+        inv = client.post(
+            "/bi/tf/invoke",
+            json={
+                "tool_slug": "code.python",
+                "input_data": {"code": "print(3*3)"},
+                "agent_key": "worker",
+            },
+            headers=h,
+        )
+        assert inv.status_code == 200, inv.text
+        assert "9" in (inv.json().get("result") or {}).get("stdout", "")
+        # cross-org hide
+        eid = inv.json()["execution_id"]
+        assert client.get(f"/bi/tf/executions/{eid}", headers={"X-Organisation-Id": "other", "X-User-Id": "u"}).status_code == 404

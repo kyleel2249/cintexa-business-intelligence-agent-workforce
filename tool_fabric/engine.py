@@ -258,6 +258,19 @@ class ToolExecutionEngine:
             eid = ap.execution_id
         return {"execution_id": eid, "status": "REJECTED"}
 
+    def cancel(self, execution_id: str, organisation_id: str) -> Dict[str, Any]:
+        with UnitOfWork() as uow:
+            rec = uow.session.get(TFExecution, execution_id)
+            if not rec or rec.organisation_id != organisation_id:
+                raise NotFoundError("Execution not found")
+            if rec.status in ("COMPLETED", "FAILED", "CANCELLED", "REJECTED", "TIMED_OUT"):
+                return {"execution_id": execution_id, "status": rec.status, "cancelled": False}
+            rec.status = "CANCELLED"
+            rec.error = "Cancelled by requester"
+            rec.completed_at = datetime.utcnow()
+        bus.publish("tool.execution.cancelled", {"execution_id": execution_id}, organisation_id=organisation_id)
+        return {"execution_id": execution_id, "status": "CANCELLED", "cancelled": True}
+
     def get_execution(self, execution_id: str, organisation_id: str) -> Optional[Dict]:
         with UnitOfWork() as uow:
             rec = uow.session.get(TFExecution, execution_id)
@@ -286,6 +299,8 @@ class ToolExecutionEngine:
             "git.clone": self._git_clone,
             "browser.open": self._browser_open,
             "deploy.apply": self._deploy,
+            "db.query": self._db_query,
+            "computer.inspect": self._computer_inspect,
         }
         fn = handlers.get(slug)
         if not fn:
@@ -449,3 +464,16 @@ class ToolExecutionEngine:
                     policy_snapshot=policy.to_dict(),
                 )
             )
+
+    def _db_query(self, inp, ws, policy, tool):
+        sql = (inp.get("sql") or "").strip().lower()
+        if not sql.startswith("select"):
+            raise AuthorizationError("Only SELECT queries allowed for db.query")
+        # no live connection by default — return structured dry capability
+        if inp.get("execute"):
+            raise ExecutionError("No authorized database connection configured")
+        return {"status": "VALIDATED", "sql": inp.get("sql"), "note": "Read-only gate passed; bind a connection to execute"}, []
+
+    def _computer_inspect(self, inp, ws, policy, tool):
+        from tool_fabric.computer import NullComputerProvider
+        return NullComputerProvider().inspect(), []
