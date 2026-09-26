@@ -36,6 +36,7 @@
       <nav class="nav">
         <button type="button" class="nav-item active" data-view="overview">Overview</button>
         <button type="button" class="nav-item" data-view="request">New request</button>
+        <button type="button" class="nav-item" data-view="missions">Missions</button>
         <button type="button" class="nav-item" data-view="agents">Agents</button>
         <button type="button" class="nav-item" data-view="tasks">Tasks</button>
         <button type="button" class="nav-item" data-view="diagnostics">Diagnostics</button>
@@ -177,6 +178,39 @@
         <div class="grid cards-3" id="agentGrid" style="margin-top:1rem;"></div>
       </section>
 
+      <!-- MISSIONS -->
+      <section class="view" id="view-missions">
+        <div class="card">
+          <h2>Launch a mission</h2>
+          <p class="muted small">The Workforce Orchestrator plans a task DAG, assembles a team of specialists, executes it and synthesises a result — via <code>POST /bi/missions</code>. Richer and slower than a single request; use this for open-ended, multi-step objectives.</p>
+          <label class="field">
+            <span>Objective</span>
+            <textarea id="missionObjective" rows="2" placeholder="e.g. Forecast next 12 months of revenue and identify the key drivers"></textarea>
+          </label>
+          <div class="row">
+            <button type="button" class="btn primary" id="btnLaunchMission">Launch mission</button>
+            <span class="muted small" id="missionStatus"></span>
+          </div>
+        </div>
+
+        <div class="card hidden" id="missionResultCard" style="margin-top:1rem;">
+          <h2>Mission result</h2>
+          <div class="meta-row" id="missionResultMeta"></div>
+          <pre class="code-block" id="missionResultBody"></pre>
+          <div class="row" style="margin-top:.75rem;">
+            <button type="button" class="btn" id="btnMissionReportMd">Report (Markdown)</button>
+            <button type="button" class="btn" id="btnMissionReportHtml">Report (HTML)</button>
+            <button type="button" class="btn" id="btnMissionReportJson">Report (JSON)</button>
+          </div>
+          <pre class="code-block hidden" id="missionReportBody" style="margin-top:.75rem;"></pre>
+        </div>
+
+        <div class="card" style="margin-top:1rem;">
+          <h2>Recent missions (this browser session)</h2>
+          <div class="task-list" id="missionList"></div>
+        </div>
+      </section>
+
       <!-- TASKS -->
       <section class="view" id="view-tasks">
         <div class="card">
@@ -231,7 +265,11 @@
       <section class="view" id="view-reports">
         <div class="card">
           <h2>Generate a report</h2>
-          <p class="muted small">Turns a completed task's synthesis into a Markdown, HTML or JSON report via <code>POST /bi/reports</code>.</p>
+          <p class="muted small">Turns a completed task's or mission's synthesis into a Markdown, HTML or JSON report via <code>POST /bi/reports</code>.</p>
+          <label class="field">
+            <span>Mission ID <span class="muted small">(takes priority over Task ID below if filled in)</span></span>
+            <input class="input" id="reportMissionId" placeholder="MISSION-…  (from the Missions tab)" />
+          </label>
           <div class="grid two">
             <label class="field">
               <span>Task ID</span>

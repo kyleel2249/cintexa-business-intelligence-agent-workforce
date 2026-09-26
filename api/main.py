@@ -301,23 +301,55 @@ async def dashboard(auth: Dict = Depends(get_org_and_user)):
 # --- Reports ---
 class ReportRequest(BaseModel):
     task_id: Optional[str] = None
+    mission_id: Optional[str] = None
     title: str = "CINTEXA Business Intelligence Report"
     report_type: str = "management"
     format: str = "markdown"  # markdown | html | json
     sections: Optional[Dict[str, Any]] = None
 
 
+def _mission_report_sections(mission) -> Dict[str, Any]:
+    """Build report sections from a completed Workforce Orchestrator mission.
+
+    mission.result is a MissionResult pydantic model once synthesis has run
+    (see WorkforceOrchestrator.synthesise -> mission.result = result in
+    orchestrator/workforce.py), so it must be dumped to a dict rather than
+    checked with isinstance(..., dict).
+    """
+    result = mission.result
+    if result is not None and hasattr(result, "model_dump"):
+        result = result.model_dump(mode="json")
+    if isinstance(result, dict) and result:
+        return result
+    # Mission still running / no result yet — fall back to what we have.
+    return {
+        "executive_summary": f"Mission '{mission.objective}' is currently {mission.status.value}.",
+        "objective": mission.objective,
+        "status": mission.status.value,
+    }
+
+
 @app.post(f"{settings.api_prefix}/reports")
 async def create_report(body: ReportRequest, auth: Dict = Depends(get_org_and_user)):
     sections = body.sections
     if sections is None:
-        if not body.task_id:
-            raise HTTPException(400, "Provide either 'task_id' (to report on a completed task) or 'sections'.")
-        task = orchestrator.get_task(body.task_id)
-        if not task or task.organisation_id != auth["organisation_id"]:
-            raise HTTPException(404, "Task not found")
-        synthesis = task.results.get("synthesis") or {}
-        sections = synthesis if isinstance(synthesis, dict) else {"executive_summary": str(synthesis)}
+        if body.task_id:
+            task = orchestrator.get_task(body.task_id)
+            if not task or task.organisation_id != auth["organisation_id"]:
+                raise HTTPException(404, "Task not found")
+            synthesis = task.results.get("synthesis") or {}
+            sections = synthesis if isinstance(synthesis, dict) else {"executive_summary": str(synthesis)}
+        elif body.mission_id:
+            from orchestrator.workforce import workforce as wf
+            mission = wf.get(body.mission_id)
+            if not mission or mission.organisation_id != auth["organisation_id"]:
+                raise HTTPException(404, "Mission not found")
+            sections = _mission_report_sections(mission)
+        else:
+            raise HTTPException(
+                400,
+                "Provide 'task_id' (legacy task), 'mission_id' (Workforce Orchestrator mission), or 'sections'.",
+            )
 
     fmt = (body.format or "markdown").lower()
     if fmt == "json":
@@ -631,6 +663,33 @@ async def mission_metrics(mission_id: str, auth: Dict = Depends(get_org_and_user
     }
 
 
+@app.get(f"{settings.api_prefix}/missions/{{mission_id}}/report")
+async def mission_report(
+    mission_id: str,
+    format: str = "markdown",
+    auth: Dict = Depends(get_org_and_user),
+):
+    """Generate a report (markdown | html | json) directly from a mission's result."""
+    from orchestrator.workforce import workforce as wf
+    mission = wf.get(mission_id)
+    if not mission or mission.organisation_id != auth["organisation_id"]:
+        raise HTTPException(404, "Mission not found")
+    sections = _mission_report_sections(mission)
+    title = f"Business Intelligence Report — {mission.objective}"
+
+    fmt = (format or "markdown").lower()
+    if fmt == "json":
+        return generate_json_report(title, sections, "management")
+    if fmt == "html":
+        html = generate_html_report(title, sections, "management")
+        return Response(content=html, media_type="text/html")
+    return {
+        "title": title,
+        "format": "markdown",
+        "content": generate_markdown_report(title, sections, "management"),
+    }
+
+
 
 
 @app.get(f"{settings.api_prefix}/missions/{{mission_id}}/stream")
@@ -655,7 +714,8 @@ async def mission_event_stream(mission_id: str, auth: Dict = Depends(get_org_and
                 yield f"data: {json.dumps(ev)}\n\n"
             last = len(mission.events)
             if mission.status.value in ("COMPLETED", "FAILED", "CANCELLED"):
-                yield f"data: {json.dumps({\"event_type\": \"stream.end\", \"status\": mission.status.value})}\n\n"
+                end_payload = {"event_type": "stream.end", "status": mission.status.value}
+                yield f"data: {json.dumps(end_payload)}\n\n"
                 break
             await asyncio.sleep(1)
 

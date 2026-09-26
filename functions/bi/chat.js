@@ -66,15 +66,57 @@ function stripHtml(html) {
   return { title, text: s.slice(0, 20000) };
 }
 
-async function browseUrl(url) {
+const BLOCKED_HOSTNAME_PATTERNS = [
+  /^localhost$/i,
+  /^127\./,
+  /^0\.0\.0\.0$/,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2\d|3[0-1])\./, // 172.16.0.0/12
+  /^169\.254\./, // link-local incl. cloud metadata (169.254.169.254)
+  /^::1$/,
+  /^\[::1\]$/,
+  /^fc00:/i,
+  /^fe80:/i,
+];
+
+function isBlockedTarget(url) {
+  let parsed;
   try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      headers: {
-        "User-Agent": "CINTEXA-BI/1.0 (+https://cintexa.com)",
-        Accept: "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8",
-      },
-    });
+    parsed = new URL(url);
+  } catch {
+    return true; // not a valid URL — refuse rather than let fetch() guess
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return true;
+  const host = parsed.hostname;
+  return BLOCKED_HOSTNAME_PATTERNS.some((re) => re.test(host));
+}
+
+async function browseUrl(url) {
+  if (isBlockedTarget(url)) {
+    return { ok: false, url, error: "Refused: internal, loopback, or non-http(s) URL" };
+  }
+  try {
+    let current = url;
+    let res;
+    for (let hop = 0; hop < 6; hop++) {
+      res = await fetch(current, {
+        redirect: "manual",
+        headers: {
+          "User-Agent": "CINTEXA-BI/1.0 (+https://cintexa.com)",
+          Accept: "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8",
+        },
+      });
+      if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+        const next = new URL(res.headers.get("location"), current).toString();
+        if (isBlockedTarget(next)) {
+          return { ok: false, url, error: "Refused: redirected to an internal or non-http(s) URL" };
+        }
+        current = next;
+        continue;
+      }
+      break;
+    }
     const ct = (res.headers.get("content-type") || "").toLowerCase();
     const buf = await res.arrayBuffer();
     const bytes = new Uint8Array(buf).slice(0, 1_200_000);
@@ -85,7 +127,7 @@ async function browseUrl(url) {
     if (ct.includes("application/json") || ct.includes("text/plain")) {
       return {
         ok: true,
-        url: res.url || url,
+        url: res.url || current,
         status: res.status,
         title: ct.includes("json") ? "JSON" : "Text",
         text: raw.slice(0, 20000),
@@ -94,7 +136,7 @@ async function browseUrl(url) {
     const { title, text } = stripHtml(raw);
     return {
       ok: true,
-      url: res.url || url,
+      url: res.url || current,
       status: res.status,
       title: title || url,
       text,
