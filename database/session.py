@@ -83,6 +83,7 @@ def init_db(url: Optional[str] = None) -> Engine:
     """Create all tables from models (dev/test). Prefer Alembic in production."""
     from database.models import Base
     import agent_os.models_db  # noqa: F401 — register AOS tables
+    import knowledge_fabric.models_db  # noqa: F401 — register KF tables
 
     engine = get_engine(url)
     Base.metadata.create_all(bind=engine)
