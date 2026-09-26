@@ -25,6 +25,17 @@ from schemas.common import new_id
 
 
 class KnowledgeFabric:
+    # Formats with in-repo text extractors. Binary office formats need dedicated parsers.
+    SUPPORTED_TEXT_TYPES = {
+        "text/plain", "text/markdown", "text/html", "text/csv",
+        "application/json", "txt", "md", "markdown", "html", "csv", "json",
+    }
+    UNSUPPORTED_WITHOUT_PARSER = {
+        "application/pdf", "pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "docx", "application/msword", "doc",
+    }
+
     def __init__(self):
         self.retrieval = RetrievalEngine()
 
@@ -75,6 +86,27 @@ class KnowledgeFabric:
     ) -> Dict[str, Any]:
         if not content:
             raise ValidationError("Document content required")
+        ct = (content_type or "text/plain").lower().strip()
+        if ct in self.UNSUPPORTED_WITHOUT_PARSER:
+            raise ValidationError(
+                f"Unsupported format without parser: {content_type}. "
+                "Provide extracted text or install a format parser adapter."
+            )
+        if ct not in self.SUPPORTED_TEXT_TYPES and "/" in ct:
+            # unknown MIME — require explicit text extraction first
+            raise ValidationError(
+                f"Unsupported content_type: {content_type}. "
+                f"Supported text types: {sorted(self.SUPPORTED_TEXT_TYPES)}"
+            )
+        # Light normalize HTML/JSON/CSV into plain text for chunking
+        if ct in ("text/html", "html"):
+            import re
+            content = re.sub(r"<script[\s\S]*?</script>", " ", content, flags=re.I)
+            content = re.sub(r"<style[\s\S]*?</style>", " ", content, flags=re.I)
+            content = re.sub(r"<[^>]+>", " ", content)
+            content = re.sub(r"\s+", " ", content).strip()
+        elif ct in ("application/json", "json"):
+            content = str(content)
         if not source_id:
             src = self.create_source(
                 organisation_id=organisation_id,

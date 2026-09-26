@@ -767,6 +767,103 @@ async def api_info():
 
 
 
+
+# --- Phase 3 Knowledge Fabric API ---
+class KFIngestRequest(BaseModel):
+    content: str
+    title: str = ""
+    content_type: str = "text/plain"
+    source_type: str = "document"
+
+
+class KFSearchRequest(BaseModel):
+    query: str
+    strategy: str = "hybrid"  # semantic|lexical|hybrid
+    top_k: int = 10
+    min_score: float = 0.0
+
+
+class KFMemoryStoreRequest(BaseModel):
+    memory_type: str
+    content: Dict[str, Any] = Field(default_factory=dict)
+    task_id: Optional[str] = None
+    agent_key: Optional[str] = None
+    trust_level: str = "AGENT_DERIVED"
+
+
+@app.post(f"{settings.api_prefix}/kf/ingest")
+async def kf_ingest(body: KFIngestRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from knowledge_fabric.service import KnowledgeFabric
+    from core.errors import ValidationError
+    try:
+        return KnowledgeFabric().ingest_document(
+            organisation_id=ctx["organisation_id"],
+            content=body.content,
+            title=body.title,
+            content_type=body.content_type,
+            source_type=body.source_type,
+        )
+    except ValidationError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post(f"{settings.api_prefix}/kf/search")
+async def kf_search(body: KFSearchRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from knowledge_fabric.service import KnowledgeFabric
+    return KnowledgeFabric().search(
+        organisation_id=ctx["organisation_id"],
+        query=body.query,
+        strategy=body.strategy,
+        top_k=min(body.top_k, 50),
+        min_score=body.min_score,
+        requester=ctx["user_id"],
+    )
+
+
+@app.post(f"{settings.api_prefix}/kf/context")
+async def kf_context(body: KFSearchRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from knowledge_fabric.context import ContextAssembler
+    return ContextAssembler().assemble(
+        organisation_id=ctx["organisation_id"],
+        query=body.query,
+        top_k=min(body.top_k, 20),
+        strategy=body.strategy,
+    )
+
+
+@app.post(f"{settings.api_prefix}/kf/memory")
+async def kf_memory_store(body: KFMemoryStoreRequest, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from knowledge_fabric.memory import MemoryService
+    return MemoryService().store(
+        organisation_id=ctx["organisation_id"],
+        memory_type=body.memory_type,
+        content=body.content,
+        user_id=ctx["user_id"],
+        task_id=body.task_id,
+        agent_key=body.agent_key,
+        trust_level=body.trust_level,
+    )
+
+
+@app.get(f"{settings.api_prefix}/kf/memory/{{memory_id}}")
+async def kf_memory_get(memory_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from knowledge_fabric.memory import MemoryService
+    row = MemoryService().retrieve(memory_id, ctx["organisation_id"])
+    if not row:
+        raise HTTPException(404, "Memory not found")
+    return row
+
+
+@app.get(f"{settings.api_prefix}/kf/provenance/{{claim_id}}")
+async def kf_provenance(claim_id: str, ctx: Dict[str, str] = Depends(get_org_and_user)):
+    from knowledge_fabric.service import KnowledgeFabric
+    from core.errors import NotFoundError
+    try:
+        return KnowledgeFabric().get_provenance(organisation_id=ctx["organisation_id"], claim_id=claim_id)
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
 # --- Phase 2 Agent Operating System API ---
 class AOSRegisterRequest(BaseModel):
     agent_key: str

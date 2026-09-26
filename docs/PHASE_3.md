@@ -35,3 +35,18 @@ Vectors are **persisted** in `kf_embeddings` (JSON array). Similarity uses cosin
 ## Tests
 
 `tests/test_phase3_knowledge_fabric.py`
+
+## Formats
+
+Supported text: plain, markdown, HTML (stripped), CSV, JSON.
+PDF/DOCX without a parser adapter return ValidationError (no fake success).
+
+## HTTP API
+
+- POST /bi/kf/ingest
+- POST /bi/kf/search
+- POST /bi/kf/context
+- POST /bi/kf/memory
+- GET /bi/kf/memory/{id}
+- GET /bi/kf/provenance/{claim_id}
+
