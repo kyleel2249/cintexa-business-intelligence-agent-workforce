@@ -201,3 +201,23 @@ def test_alert_and_defect(db_ready):
     assert AlertService().list_open("org-b") == []
     IncidentService().create("org-a", "spike", severity="HIGH")
     EvaluationEngine().create_defect("org-a", "bad output", expected="x", actual="y")
+
+
+def test_secret_injection_matrix():
+    from observability.logging import redact_secrets
+    samples = [
+        {"api_key": "API_KEY_TEST_secret123"},
+        {"password": "PASSWORD_TEST_xyz"},
+        "Bearer TOKEN_TEST_abcdefghi",
+        "sk-live-abcdefghijklmnop",
+        "ghp_abcdefghijklmnopqrstuvwxyz123456",
+        "SESSION_TOKEN_TEST_abc",
+    ]
+    for s in samples:
+        out = str(redact_secrets(s))
+        assert "API_KEY_TEST_secret123" not in out
+        assert "PASSWORD_TEST_xyz" not in out
+        assert "sk-live-abcdefghijklmnop" not in out
+        assert "ghp_abcdefghijklmnopqrstuvwxyz123456" not in out
+        assert "TOKEN_TEST_abcdefghi" not in out
+        assert "SESSION_TOKEN_TEST_abc" not in out

@@ -11,9 +11,11 @@ from observability.context import get_context
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)(api[_-]?key|token|password|secret|authorization)\s*[:=]\s*['\"]?([^\s'\"]+)", re.I),
-    re.compile(r"\b(sk-[a-zA-Z0-9]{10,})\b"),
+    re.compile(r"\b(sk-[a-zA-Z0-9\-]{10,})\b"),
     re.compile(r"\b(ghp_[a-zA-Z0-9]{20,})\b"),
-    re.compile(r"\b(Bearer\s+)[A-Za-z0-9\-._~+/]+=*", re.I),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/=]+"),
+    re.compile(r"(?i)\b(API_KEY|SECRET|PASSWORD|TOKEN|PRIVATE_KEY|DATABASE_PASSWORD|SESSION_TOKEN)[_-]TEST[_A-Za-z0-9]*"),
+    re.compile(r"(?i)\b(API_KEY_TEST|SECRET_TEST|PASSWORD_TEST|BEARER_TOKEN_TEST|PRIVATE_KEY_TEST|DATABASE_PASSWORD_TEST|SESSION_TOKEN_TEST)[_A-Za-z0-9]*"),
 ]
 
 _SENSITIVE_KEYS = {
@@ -38,7 +40,7 @@ def redact_secrets(obj: Any) -> Any:
         for pat in _SECRET_PATTERNS:
             s = pat.sub(lambda m: m.group(0)[: m.start(2) - m.start(0)] + "[REDACTED]" if m.lastindex and m.lastindex >= 2 else "[REDACTED]", s)
         # simpler second pass
-        s = re.sub(r"\bsk-[a-zA-Z0-9]{10,}\b", "[REDACTED]", s)
+        s = re.sub(r"\bsk-[a-zA-Z0-9\-]{10,}\b", "[REDACTED]", s)
         s = re.sub(r"\bghp_[a-zA-Z0-9]{20,}\b", "[REDACTED]", s)
         return s
     return obj
