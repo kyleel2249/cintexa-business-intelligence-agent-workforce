@@ -208,3 +208,22 @@ def test_cross_tenant_proposal_hidden(db_ready):
         evidence={"e": 1},
     )
     assert ProposalService().get(p["proposal_id"], "orgB") is None
+
+
+def test_disable_evaluation_blocked(db_ready):
+    from evolution.proposals import ProposalService
+    from evolution.approval import ApprovalEngine
+    from evolution.governance import risk_for, RiskLevel, is_prohibited
+    from core.errors import AuthorizationError
+
+    assert is_prohibited("DISABLE_EVALUATION")
+    assert risk_for("DISABLE_EVALUATION") == RiskLevel.LEVEL_4
+    p = ProposalService().create(
+        "org1",
+        title="disable eval",
+        category="DISABLE_EVALUATION",
+        proposed_change={"disable": True},
+        evidence={"note": "attack"},
+    )
+    with pytest.raises(AuthorizationError):
+        ApprovalEngine().approve("org1", p["proposal_id"], approver="bob", role="human")

@@ -66,15 +66,18 @@ CATEGORY_RISK = {
     "CREDENTIALS": RiskLevel.LEVEL_4,
     "GOVERNANCE": RiskLevel.LEVEL_4,
     "SELF_APPROVAL": RiskLevel.LEVEL_4,
+    "DISABLE_EVALUATION": RiskLevel.LEVEL_4,
 }
-
-
-def risk_for(category: str) -> RiskLevel:
-    return CATEGORY_RISK.get(category, RiskLevel.LEVEL_2)
 
 
 def is_prohibited(category: str) -> bool:
     return category.upper() in PROHIBITED_AUTO_CATEGORIES or category in PROHIBITED_AUTO_CATEGORIES
+
+
+def risk_for(category: str) -> RiskLevel:
+    if is_prohibited(category):
+        return RiskLevel.LEVEL_4
+    return CATEGORY_RISK.get(category, RiskLevel.LEVEL_2)
 
 
 @dataclass

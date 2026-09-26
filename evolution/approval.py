@@ -42,11 +42,9 @@ class ApprovalEngine:
                 from core.errors import NotFoundError
                 raise NotFoundError("Proposal not found")
             if is_prohibited(prop.category) and decision == "APPROVED" and role != "security_admin":
-                # LEVEL_4 prohibited categories need elevated role
-                if prop.risk_level == RiskLevel.LEVEL_4.value:
-                    raise AuthorizationError(
-                        f"Category {prop.category} requires security_admin approval"
-                    )
+                raise AuthorizationError(
+                    f"Category {prop.category} requires security_admin approval"
+                )
             aid = new_id("APR-")
             expires = datetime.utcnow() + timedelta(hours=expires_hours) if expires_hours else None
             uow.session.add(
