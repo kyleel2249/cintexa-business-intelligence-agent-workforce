@@ -33,7 +33,31 @@ chat_service = ChatService(orchestrator)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: agents are lazy-loaded by orchestrator
+    # Startup: ensure the database schema exists.
+    #
+    # Neither the Procfile (`web: uvicorn api.main:app ...`) nor start.sh run
+    # Alembic migrations, and this handler previously did nothing on
+    # startup. On a clean checkout/deploy that meant every DB-backed
+    # endpoint (e.g. POST /bi/diagnostics) 500'd with
+    # `sqlalchemy.exc.OperationalError: no such table: agent_tasks` the
+    # moment it was first hit, even though /health reported "ok". Verified
+    # by booting the app against a fresh SQLite file and calling
+    # /bi/diagnostics directly.
+    #
+    # `init_db()` uses `Base.metadata.create_all(bind=engine)`, which only
+    # creates tables that don't already exist — it never drops or alters
+    # anything, so this is a safe no-op against a database that Alembic has
+    # already migrated (the preferred path in production; see
+    # docs/PRODUCTION_READINESS.md). It's a safety net that stops first-boot
+    # 500s, not a replacement for running `alembic upgrade head` in prod.
+    try:
+        from database.session import init_db
+
+        init_db()
+    except Exception as exc:  # pragma: no cover - defensive; app still serves /health
+        import logging
+
+        logging.getLogger(__name__).error("Startup schema check failed: %s", exc)
     yield
     # Shutdown hooks if needed
 

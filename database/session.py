@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import datetime as _dt
+import decimal
+import json
+import uuid
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import Any, Generator, Optional
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -13,6 +17,38 @@ from config.settings import get_settings
 
 _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker] = None
+
+
+def _json_default(obj: Any) -> Any:
+    """Fallback encoder for JSON columns.
+
+    Agent/pydantic result payloads frequently carry `datetime`/`date` (e.g.
+    `created_at` on evidence/report models produced via `.model_dump()`
+    without `mode="json"`), `Decimal`, `uuid.UUID` or `set` values nested
+    several levels deep inside a `results`/`context`/`data` JSON blob.
+    Python's stdlib `json` module cannot serialise these natively and raises
+    `TypeError`, which previously surfaced as an opaque
+    `sqlalchemy.exc.StatementError` at persist time (see docs/GAP_REGISTER.md
+    candidates / test_orchestrator.py, test_api.py). Rather than chasing
+    every call site across twelve agents that might embed one of these
+    types, the engine's JSON serializer gets a safe, lossless-for-display
+    fallback so persistence never breaks on a well-formed domain object.
+    """
+    if isinstance(obj, (_dt.datetime, _dt.date, _dt.time)):
+        return obj.isoformat()
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    if isinstance(obj, (set, frozenset)):
+        return list(obj)
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    return str(obj)
+
+
+def _json_serializer(obj: Any) -> str:
+    return json.dumps(obj, default=_json_default)
 
 
 def get_database_url() -> str:
@@ -37,6 +73,7 @@ def get_engine(url: Optional[str] = None) -> Engine:
         connect_args=connect_args,
         pool_pre_ping=True,
         future=True,
+        json_serializer=_json_serializer,
     )
 
     # SQLite FK enforcement

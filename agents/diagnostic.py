@@ -66,7 +66,7 @@ class BusinessDiagnosticAgent(BaseAgent):
                 if report.overall_score is not None
                 else "Business Health Score: unavailable (insufficient data)"
             ),
-            "findings": report.model_dump(),
+            "findings": report.model_dump(mode="json"),
             "recommendations": report.recommended_actions,
             "risks": report.risks,
             "metrics": [

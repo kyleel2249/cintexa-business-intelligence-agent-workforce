@@ -86,7 +86,7 @@ class ResearchAgent(BaseAgent):
             "findings": findings,
             "sources": sources,
             "evidence_ids": evidence_ids,
-            "evidence": [e.model_dump() for e in evidence_list],
+            "evidence": [e.model_dump(mode="json") for e in evidence_list],
             "recommendations": [
                 "Wire a web search adapter to enable live research; until then findings remain unavailable."
             ],
