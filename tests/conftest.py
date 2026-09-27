@@ -88,3 +88,9 @@ def _heal_default_db_state():
         if path and not os.path.exists(path):
             _pin_session_db()
     yield
+
+
+try:
+    import internet_fabric.models_db  # noqa: F401
+except Exception:
+    pass

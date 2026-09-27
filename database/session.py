@@ -127,6 +127,7 @@ def init_db(url: Optional[str] = None) -> Engine:
     import evolution.models_db  # noqa: F401 — register EVO tables
     import cintexa_platform.models_db  # noqa: F401 — register PLATFORM tables
     import external_fabric.models_db  # noqa: F401 — register EXT tables
+    import internet_fabric.models_db  # noqa: F401 — register INET tables
 
     engine = get_engine(url)
     Base.metadata.create_all(bind=engine)

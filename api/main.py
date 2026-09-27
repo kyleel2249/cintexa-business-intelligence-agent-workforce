@@ -84,6 +84,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+try:
+    from api.internet import router as internet_router
+    app.include_router(internet_router)
+except Exception as _e:  # pragma: no cover
+    import logging
+    logging.getLogger(__name__).warning("internet router not loaded: %s", _e)
+
+
 _cors = list(dict.fromkeys(settings.cors_origin_list + [
     "https://cintexa-business-intelligence-agent-workforce.pages.dev",
     "http://localhost:5500",
