@@ -55,3 +55,77 @@ Rather than trust the register's self-reported status, each item below was indep
 - Full suite: **169/169 passing** (was 148/167 at the start).
 - All 5 real end-to-end drills in this round were actually executed, not just coded: network isolation, PDF/DOCX round-trip through real files, OTLP export to a real listening collector, 194-agent registry stress test, and a full backup/corrupt/restore/verify cycle.
 
+---
+
+## Round 3: G07/G08 fail-fast fix, and a major systemic finding (G01, G03–G06, G19)
+
+### Fixed: production fail-fast was dead code
+
+`validate_production_settings()` existed, was documented as "fail fast when production is misconfigured," and was unit-tested in isolation — but was **never called anywhere in the running application**. Verified live: booted the app with `ENVIRONMENT=production`, the placeholder `SECRET_KEY`, `AUTH_DEV_FALLBACK=true`, and a SQLite `DATABASE_URL` — exactly the combination this function exists to reject — and it booted and served `/health` at 200 without complaint.
+
+Fixed by calling it at the top of `lifespan()`, **not** wrapped in try/except (unlike the `init_db()` safety net) — a misconfigured production deploy should genuinely refuse to start. Re-verified: the same dangerous config now fails immediately with `RuntimeError: PRODUCTION: secret_key must be set` before accepting any connections. Normal dev boot (no `ENVIRONMENT` set) is unaffected.
+
+### Found, not fixed: an entire hardening layer is disconnected from live execution
+
+This is the single biggest finding of the whole assessment. G01, G03, G04, G05, G06, and G19 were all marked "MITIGATED" in the register. Checking whether each mechanism is actually *called* from the live orchestrator/API path (not just defined and unit-tested) found a consistent pattern:
+
+| Gap | Mechanism | What's actually wired in |
+|---|---|---|
+| G01 | `DurableCircuit`/`DurableHealth` (circuit breakers) | Nothing — instantiated only in its own unit test |
+| G03 | `JobQueue` (multi-worker job queue) | Nothing — `.enqueue()` has zero callers anywhere; no standalone worker process exists despite `docs/DEPLOYMENT_ARCHITECTURE.md` describing a "Workers" role |
+| G04 | `DurableLease` (distributed leases/fencing) | Nothing — zero callers outside its own module |
+| G05 | `CanaryRouter` | `.upsert_route()` is called from `evolution/deployment.py`, but `.choose()` — the actual routing decision — is called **nowhere**, tests included. Canary routes can be registered but have zero effect on any real request |
+| G06 | `SecretVault` | Nothing — `external_fabric/browser.py` (the code that would need it for API keys) never references it |
+| G19 | `RetryBudget` / `reliability.circuit.circuits` | Exposed via read-only inspection endpoints (`GET /rel/health`, `GET /rel/dead-letters`) that will return empty data forever, since `orchestrator/core.py` never consults `circuits` or writes to the dead-letter queue on a real failure |
+
+**Bottom line:** every agent task today runs synchronously, in-process, on the request thread, with none of Phases 5–8's hardening actually protecting it. The database tables, classes, and tests all exist and pass — the integration into the code paths that would need them doesn't.
+
+**I did not attempt to fix this.** Wiring six subsystems into the live orchestrator — circuit breakers around every agent call, routing real work through a job queue, enforcing leases, making canary decisions actually affect traffic, routing external API keys through the vault — is a genuine architecture/integration project, not a contained bug fix, and changing how the orchestrator executes tasks carries real risk to currently-working behavior. This needs your explicit prioritization, not a silent change buried in a "fix everything" pass. `docs/GAP_REGISTER.md` now has a top-of-file summary explaining this, plus corrected per-row status (`BUILT, NOT INTEGRATED` is a new status distinct from `MITIGATED`).
+
+G02 (change/deployment freeze) was re-checked and is genuinely fine — `evolution.governance.change_freeze` does bridge process-local state to the durable store on every call, correctly scoped to self-modification governance rather than general task execution.
+
+## 🔴 Round 4: CRITICAL — no real authentication exists (G22, new finding)
+
+This is the most severe finding in the entire assessment, and I have **not fixed it** — it needs your explicit decision, not a unilateral change.
+
+`docs/AUTHORIZATION.md` and `core/auth.py` are honest about this being unfinished: *"Production must set `environment=production` and `auth_dev_fallback=false` and supply real auth (Phase later)."* But it was never tracked in the gap register, and its real-world severity is worse than that framing suggests.
+
+**The problem:** `get_org_and_user()` — the dependency every "authenticated" endpoint in `api/main.py` depends on — does no verification at all. It reads `X-Organisation-Id` and `X-User-Id` HTTP headers and trusts them completely: no password, no token, no session, no membership check. It doesn't even check `auth_dev_fallback` (confirmed: zero references to that setting anywhere in `api/main.py`).
+
+**Live-proven, not theoretical:**
+1. Created a task as org `acme-corp-CONFIDENTIAL` / user `alice`, containing a deliberately sensitive request ("Acme Corp secret acquisition target: BigCo, offer 50M").
+2. Retrieved that exact task as user `random-never-invited-attacker` — someone with **zero relationship to that org**, no credentials of any kind — by sending the same `X-Organisation-Id` header. Result: **`200 OK`, full task content returned**, including the sensitive request text and every agent's findings.
+3. Confirmed the org-isolation check itself works correctly — a request claiming a genuinely *different* org is correctly refused with `403 Organisation isolation violation`. The bug isn't in that check's logic; it's that "which org you are" is 100% self-asserted with nothing behind it.
+
+`python-jose` and `passlib[bcrypt]` are both declared dependencies in `requirements.txt` — suggesting real JWT/password-based auth was planned — but neither is imported or used anywhere in the codebase. There's no real auth implementation sitting nearby to just "wire in," unlike the `init_db()`/`validate_production_settings()` fixes earlier.
+
+**Why I stopped here instead of building it:** implementing real authentication — token issuance, credential verification, session handling, and rewiring every one of the ~70 endpoints — is a substantial product feature with real design decisions (what auth model, token lifetime, refresh strategy, whether to integrate an external IdP), not a contained bug fix. Given how much has already changed in this pass, silently shipping a from-scratch auth system alongside everything else felt like exactly the kind of unilateral, high-risk architecture decision I should bring to you first rather than just doing.
+
+`docs/GAP_REGISTER.md` now has this as **G22**, marked `CRITICAL — NOT FIXED — needs your decision`.
+
+### Also this round: G07/G08 fail-fast was dead code (fixed)
+
+`validate_production_settings()` existed, was documented as "fail fast when production is misconfigured," and was unit-tested in isolation — but was never called anywhere in the running application. Verified live: booted with `ENVIRONMENT=production` + the placeholder `SECRET_KEY` + `AUTH_DEV_FALLBACK=true` + SQLite (exactly what it exists to reject) — it booted fine and served `/health` at 200. Fixed by calling it at the top of `lifespan()`, **not** wrapped in try/except (unlike the `init_db()` safety net) — a misconfigured prod deploy should genuinely refuse to start. Re-verified: now fails immediately with `RuntimeError: PRODUCTION: secret_key must be set` before accepting any connections; normal dev boot is unaffected.
+
+### Also this round: an entire hardening layer is disconnected from live execution (G01, G03–G06, G19)
+
+Six more "MITIGATED" items turned out to follow the same pattern as the auth issue — real, tested, migrated-into-the-schema code with zero callers in the live orchestrator/API path:
+
+| Gap | Mechanism | What's actually wired in |
+|---|---|---|
+| G01 | `DurableCircuit`/`DurableHealth` (circuit breakers) | Nothing — only used in its own unit test |
+| G03 | `JobQueue` (multi-worker job queue) | Nothing — `.enqueue()` has zero callers; no standalone worker process exists despite the docs describing a "Workers" deployment role |
+| G04 | `DurableLease` (distributed leases/fencing) | Nothing — zero callers outside its own module |
+| G05 | `CanaryRouter` | Routes can be registered, but `.choose()` — the actual routing decision — is called nowhere, tests included. Zero effect on real traffic |
+| G06 | `SecretVault` | Nothing — the browser/external-fabric code that would need it for API keys never references it |
+| G19 | `RetryBudget` / circuit inspection endpoints | Exposed via read-only endpoints that will return empty data forever, since the orchestrator never writes to them on a real failure |
+
+**Bottom line:** every agent task today runs synchronously, in-process, on the request thread, with none of Phases 5–8's hardening actually protecting it. I did not attempt to fix this either — wiring six subsystems into live execution is a genuine integration project with real risk to currently-working behavior, not something to change silently. `docs/GAP_REGISTER.md` has a new top-of-file summary explaining this pattern, plus a new `BUILT, NOT INTEGRATED` status distinct from `MITIGATED`.
+
+G02, G13, G14, G15, G17, G18 were also independently re-verified this round and confirmed genuinely accurate as originally described — no issues found.
+
+### Final verification
+- Full suite: **169/169 passing**, no regressions.
+- The G22 vulnerability was proven with a real running server and real HTTP requests, not inferred from reading code.
+
+

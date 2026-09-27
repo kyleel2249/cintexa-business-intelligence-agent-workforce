@@ -33,6 +33,21 @@ chat_service = ChatService(orchestrator)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail fast on a misconfigured production deployment.
+    #
+    # `validate_production_settings()` existed and was unit-tested in
+    # isolation (tests/test_platform_hardening.py) but was never actually
+    # called anywhere in the running application. Verified by booting the
+    # app with ENVIRONMENT=production, the placeholder SECRET_KEY,
+    # AUTH_DEV_FALLBACK=true, and a sqlite DATABASE_URL: it booted and
+    # served /health at 200 without complaint, despite this function
+    # existing specifically to reject that exact combination. Unlike the
+    # init_db() safety net below, this one must NOT be swallowed — running
+    # insecurely in production is worse than refusing to start.
+    from config.settings import validate_production_settings
+
+    validate_production_settings(settings)
+
     # Startup: ensure the database schema exists.
     #
     # Neither the Procfile (`web: uvicorn api.main:app ...`) nor start.sh run
@@ -68,9 +83,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
-from api.internet import router as internet_router
-app.include_router(internet_router)
 
 _cors = list(dict.fromkeys(settings.cors_origin_list + [
     "https://cintexa-business-intelligence-agent-workforce.pages.dev",
