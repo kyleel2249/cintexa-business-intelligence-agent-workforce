@@ -1,5 +1,5 @@
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/Dockerfile ./Dockerfile
---- ../pristine/Dockerfile	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/Dockerfile ./Dockerfile
+--- /home/claude/pristine/Dockerfile	2026-09-26 19:34:56.000000000 +0000
 +++ ./Dockerfile	2026-09-26 20:51:02.238380130 +0000
 @@ -17,4 +17,8 @@
  
@@ -11,14 +11,14 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/Dockerfile ./Do
 +# docs/DEPLOYMENT_ARCHITECTURE.md and Procfile's `release:` line, which does
 +# the same thing on platforms that support a separate release phase.
 +CMD ["sh", "-c", "alembic upgrade head && exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/Procfile ./Procfile
---- ../pristine/Procfile	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/Procfile ./Procfile
+--- /home/claude/pristine/Procfile	2026-09-26 19:34:56.000000000 +0000
 +++ ./Procfile	2026-09-26 20:50:55.326061735 +0000
 @@ -1 +1,2 @@
 +release: alembic upgrade head
  web: uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/agents/diagnostic.py ./agents/diagnostic.py
---- ../pristine/agents/diagnostic.py	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/agents/diagnostic.py ./agents/diagnostic.py
+--- /home/claude/pristine/agents/diagnostic.py	2026-09-26 19:34:56.000000000 +0000
 +++ ./agents/diagnostic.py	2026-09-26 20:43:25.476786583 +0000
 @@ -66,7 +66,7 @@
                  if report.overall_score is not None
@@ -29,8 +29,8 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/agents/diagnost
              "recommendations": report.recommended_actions,
              "risks": report.risks,
              "metrics": [
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/agents/research.py ./agents/research.py
---- ../pristine/agents/research.py	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/agents/research.py ./agents/research.py
+--- /home/claude/pristine/agents/research.py	2026-09-26 19:34:56.000000000 +0000
 +++ ./agents/research.py	2026-09-26 20:43:28.041934458 +0000
 @@ -86,7 +86,7 @@
              "findings": findings,
@@ -41,8 +41,8 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/agents/research
              "recommendations": [
                  "Wire a web search adapter to enable live research; until then findings remain unavailable."
              ],
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/api/main.py ./api/main.py
---- ../pristine/api/main.py	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/api/main.py ./api/main.py
+--- /home/claude/pristine/api/main.py	2026-09-26 19:34:56.000000000 +0000
 +++ ./api/main.py	2026-09-26 20:47:50.227948814 +0000
 @@ -33,7 +33,31 @@
  
@@ -77,8 +77,8 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/api/main.py ./a
      yield
      # Shutdown hooks if needed
  
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/database/session.py ./database/session.py
---- ../pristine/database/session.py	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/database/session.py ./database/session.py
+--- /home/claude/pristine/database/session.py	2026-09-26 19:34:56.000000000 +0000
 +++ ./database/session.py	2026-09-26 20:43:15.809367444 +0000
 @@ -2,8 +2,12 @@
  
@@ -141,8 +141,662 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/database/sessio
      )
  
      # SQLite FK enforcement
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/start.sh ./start.sh
---- ../pristine/start.sh	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/docs/BACKUP_RESTORE.md ./docs/BACKUP_RESTORE.md
+--- /home/claude/pristine/docs/BACKUP_RESTORE.md	1970-01-01 00:00:00.000000000 +0000
++++ ./docs/BACKUP_RESTORE.md	2026-09-27 08:49:26.011277537 +0000
+@@ -0,0 +1,59 @@
++# Backup & Restore
++
++## Status
++
++`scripts/backup_restore.py` provides real, tested backup/restore tooling
++for both database backends the app supports. This did not previously
++exist anywhere in the repo — see "What this replaces" below.
++
++**Verified in this environment:** a full drill (seed data → backup →
++verify → simulate database loss → restore → verify data integrity) was
++run end-to-end against SQLite and passed — exact pre-disaster data was
++recovered. **Not yet verified:** the PostgreSQL path (`pg_dump`/`pg_restore`
++commands are implemented and follow standard practice, but this sandbox has
++no Postgres server to drill against — someone with a real Postgres
++instance should run the drill below once against staging before relying on
++this in production).
++
++## Usage
++
++```bash
++# Back up the database DATABASE_URL currently points at
++python3 scripts/backup_restore.py backup --out backups/cintexa_bi_$(date +%Y%m%d).backup
++
++# Sanity-check a backup file without touching the live database
++python3 scripts/backup_restore.py verify --in backups/cintexa_bi_20260101.backup
++
++# Restore (requires --yes; makes a pre-restore safety copy first for SQLite)
++python3 scripts/backup_restore.py restore --in backups/cintexa_bi_20260101.backup --yes
++```
++
++Reads `DATABASE_URL` from the environment — the same variable
++`database/session.py` uses, so this always targets whatever database the
++app itself is configured against.
++
++- **SQLite**: uses `sqlite3`'s online backup API (`Connection.backup()`),
++  which is safe against a live/open database — not a raw file copy, which
++  could race a concurrent writer mid-transaction. Restore keeps a
++  timestamped `.pre-restore-<pid>.bak` copy of the live file before
++  overwriting it.
++- **PostgreSQL**: uses `pg_dump -Fc` (custom format — compressed, supports
++  selective restore) and `pg_restore --clean --if-exists --no-owner`.
++
++## Recommended drill cadence
++
++Run the full backup → verify → restore-into-a-scratch-database cycle:
++- Once before first production deploy (required — see
++  `docs/PRODUCTION_READINESS.md` item 4).
++- After every schema-changing Alembic migration.
++- On a recurring schedule (monthly is a reasonable starting point) as a
++  standing check that backups are actually restorable, not just present.
++
++## What this replaces
++
++Before this, `docs/PRODUCTION_READINESS.md` listed "Backup + restore drill
++evidence" only as an outstanding checklist item (line 45), and
++`docs/RECOVERY.md` covers a different concern — in-process restart recovery
++(resuming durable mission/task state after the app process restarts), not
++recovering from losing the underlying database itself. There was no actual
++backup/restore procedure or tooling anywhere in the repository.
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/docs/GAP_REGISTER.md ./docs/GAP_REGISTER.md
+--- /home/claude/pristine/docs/GAP_REGISTER.md	2026-09-26 19:34:56.000000000 +0000
++++ ./docs/GAP_REGISTER.md	2026-09-27 08:49:46.530990031 +0000
+@@ -12,15 +12,16 @@
+ | G06 | X | Browser long-lived API keys | HIGH | MITIGATED | `SecretVault` server-side; client redaction |
+ | G07 | 1 | SQLite as only DB | HIGH | MITIGATED | Postgres allowed; prod settings reject sqlite |
+ | G08 | 1 | Auth/dev fallback in prod | HIGH | MITIGATED | `validate_production_settings` fail-fast |
+-| G09 | 4 | Path-only sandbox | HIGH | INTENTIONALLY DEFERRED | Container/seccomp requires runtime infra |
++| G09 | 4 | Path-only sandbox | HIGH | PARTIALLY MITIGATED | Real `unshare --net` network isolation now enforced (was previously a dead no-op parameter — verified live, traffic actually blocked); full container/seccomp isolation still requires runtime infra |
+ | G10 | 4 | Browser/computer providers | MED | INTENTIONALLY DEFERRED | Interfaces remain; real browser farm external |
+-| G11 | 3 | Vector ANN production | MED | INTENTIONALLY DEFERRED | Embeddings abstraction; pgvector ops external |
+-| G12 | 3 | PDF/DOCX ingestion | MED | INTENTIONALLY DEFERRED | Explicit rejection remains until parsers ship |
++| G11 | 3 | Vector ANN production | MED | INTENTIONALLY DEFERRED | Brute-force cosine scan confirmed (no pgvector/FAISS); previously-silent 5000-chunk cap now surfaced in response + logged, so truncation is visible instead of hidden. pgvector ops still external |
++| G12 | 3 | PDF/DOCX ingestion | — | MITIGATED | Real parsers shipped (`knowledge_fabric/document_parsers.py`, `pypdf`+`python-docx`); verified end-to-end: real PDF/DOCX generated, ingested, extracted, and made searchable |
+ | G13 | 5 | Exactly-once | — | INTENTIONALLY BY DESIGN | At-least-once + idempotency |
+ | G14 | 6 | LLM judge as truth | — | INTENTIONALLY BY DESIGN | Deterministic evaluation |
+ | G15 | 7 | Uncontrolled self-mod | — | INTENTIONALLY BY DESIGN | Governance blocks |
+-| G16 | 6 | External OTEL | MED | INTENTIONALLY DEFERRED | Internal telemetry first |
++| G16 | 6 | External OTEL | — | MITIGATED | Optional OTLP/HTTP exporter shipped (`observability/otlp_export.py`), feature-flagged via `OTEL_EXPORTER_OTLP_ENDPOINT`; verified live against a real local collector — span received correctly. No-op when unset (default), never blocks the app |
+ | G17 | X | Unified Pages+API deploy | MED | MITIGATED | Documented architecture; edge vs API roles |
+-| G18 | X | Full 194 agents | LOW | INTENTIONALLY DEFERRED | Registry scales; agents not bulk-loaded |
++| G18 | X | Full 194 agents | LOW | INTENTIONALLY DEFERRED | Registry scaling claim independently verified: 194 synthetic agents registered in 0.52s, no hardcoded limits found in register()/list_agents()/find_by_capability(). Remaining gap is writing ~182 agents' worth of real business logic — a content task, not infra |
+ | G19 | 5 | Global retry budgets | MED | MITIGATED | Job max_attempts + existing RetryBudget |
+-| G20 | X | Backup/restore tested | MED | INTENTIONALLY DEFERRED | Documented procedure; needs ops environment |
++| G20 | X | Backup/restore tested | MED | PARTIALLY MITIGATED | Previous note overstated status — no procedure existed anywhere in the repo. Real tooling now shipped (`scripts/backup_restore.py`, `docs/BACKUP_RESTORE.md`); full drill (seed→backup→verify→simulate loss→restore→verify) run and passed for SQLite. Postgres path implemented but not drilled — no Postgres server available in this environment |
++| G21 | X | DB schema never created on boot | CRITICAL | MITIGATED | Fresh deploy 500'd on every DB-backed endpoint — `lifespan()` never called `init_db()`, and neither `Procfile`/`start.sh`/`Dockerfile` ran migrations. Verified by booting cold and hitting `/bi/diagnostics` before and after fix. Now: `lifespan()` calls `init_db()` as a safety net, and `Procfile` release phase / `start.sh` / `Dockerfile` all run `alembic upgrade head` before serving traffic |
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/knowledge_fabric/document_parsers.py ./knowledge_fabric/document_parsers.py
+--- /home/claude/pristine/knowledge_fabric/document_parsers.py	1970-01-01 00:00:00.000000000 +0000
++++ ./knowledge_fabric/document_parsers.py	2026-09-27 03:07:10.563134813 +0000
+@@ -0,0 +1,96 @@
++"""Document parsers for binary office formats.
++
++Closes G12 in docs/GAP_REGISTER.md ("PDF/DOCX ingestion... explicit
++rejection remains until parsers ship"). `python-docx` was already a
++declared dependency in requirements.txt but was never actually imported
++anywhere in the codebase — this module is what was missing to use it.
++
++Both parsers take raw bytes and return plain text suitable for the existing
++`knowledge_fabric.chunking` pipeline. Parsing failures raise
++`core.errors.ValidationError` with a clear message rather than propagating
++a library-specific exception or silently returning empty/garbled text.
++"""
++
++from __future__ import annotations
++
++import io
++
++from core.errors import ValidationError
++
++
++def extract_pdf_text(data: bytes) -> str:
++    try:
++        from pypdf import PdfReader
++    except ImportError as exc:  # pragma: no cover - dependency always declared in requirements.txt
++        raise ValidationError(
++            "PDF parsing requires the 'pypdf' package, which is not installed."
++        ) from exc
++
++    if not data:
++        raise ValidationError("Empty PDF content")
++
++    try:
++        reader = PdfReader(io.BytesIO(data))
++    except Exception as exc:
++        raise ValidationError(f"Could not read PDF: {exc}") from exc
++
++    if getattr(reader, "is_encrypted", False):
++        try:
++            reader.decrypt("")
++        except Exception:
++            pass
++    if getattr(reader, "is_encrypted", False):
++        raise ValidationError("PDF is password-protected; cannot extract text")
++
++    pages = []
++    for i, page in enumerate(reader.pages):
++        try:
++            text = page.extract_text() or ""
++        except Exception:
++            text = ""
++        pages.append(f"[page {i + 1}]\n{text}".strip())
++
++    combined = "\n\n".join(p for p in pages if p)
++    if not combined.strip():
++        raise ValidationError(
++            "No extractable text found in PDF (it may be a scanned/image-only "
++            "document — OCR is not supported)"
++        )
++    return combined
++
++
++def extract_docx_text(data: bytes) -> str:
++    try:
++        import docx
++    except ImportError as exc:
++        raise ValidationError(
++            "DOCX parsing requires the 'python-docx' package, which is not installed."
++        ) from exc
++
++    if not data:
++        raise ValidationError("Empty DOCX content")
++
++    try:
++        document = docx.Document(io.BytesIO(data))
++    except Exception as exc:
++        raise ValidationError(f"Could not read DOCX: {exc}") from exc
++
++    parts = []
++    for para in document.paragraphs:
++        if para.text and para.text.strip():
++            heading = para.style.name if para.style and para.style.name else ""
++            if heading.lower().startswith("heading"):
++                parts.append(f"\n## {para.text.strip()}\n")
++            else:
++                parts.append(para.text.strip())
++
++    for table in document.tables:
++        for row in table.rows:
++            cells = [c.text.strip() for c in row.cells]
++            if any(cells):
++                parts.append(" | ".join(cells))
++
++    combined = "\n".join(parts)
++    if not combined.strip():
++        raise ValidationError("No extractable text found in DOCX (document appears empty)")
++    return combined
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/knowledge_fabric/retrieval.py ./knowledge_fabric/retrieval.py
+--- /home/claude/pristine/knowledge_fabric/retrieval.py	2026-09-26 19:34:56.000000000 +0000
++++ ./knowledge_fabric/retrieval.py	2026-09-27 03:06:03.739083413 +0000
+@@ -2,6 +2,7 @@
+ 
+ from __future__ import annotations
+ 
++import logging
+ import re
+ import time
+ from dataclasses import dataclass, field
+@@ -10,6 +11,8 @@
+ from knowledge_fabric.embeddings import cosine, get_embedding_provider
+ from schemas.common import new_id
+ 
++logger = logging.getLogger(__name__)
++
+ 
+ @dataclass
+ class RetrievalHit:
+@@ -91,6 +94,25 @@
+             if source_ids:
+                 q = q.filter(KFChunk.source_id.in_(source_ids))
+             chunks = q.limit(5000).all()  # bounded; index filters applied
++            # NOTE (G11, docs/GAP_REGISTER.md): there is no ANN index (no
++            # pgvector/FAISS) — this scans up to 5000 active chunks per
++            # organisation and scores them with a Python-side cosine
++            # comparison. That's a real, intentionally-deferred scalability
++            # ceiling (production ANN ops require external infra), but the
++            # 5000 cap was previously silent: an org past that size got
++            # quietly incomplete retrieval with no signal anywhere in the
++            # response. Surface it instead so operators/agents can tell.
++            total_chunk_count = q.count()
++            truncated_by_cap = total_chunk_count > len(chunks)
++            if truncated_by_cap:
++                logger.warning(
++                    "Retrieval candidate pool truncated for org=%s: %d active "
++                    "chunks exist but only the first 5000 were scored (no ANN "
++                    "index — see docs/GAP_REGISTER.md G11). Results may be "
++                    "incomplete.",
++                    organisation_id,
++                    total_chunk_count,
++                )
+ 
+             # Permission: only sources readable by org (org_read default)
+             allowed_sources = set()
+@@ -220,4 +242,7 @@
+                 for h in hits
+             ],
+             "latency_ms": latency,
++            "candidate_pool_truncated": truncated_by_cap,
++            "candidate_pool_size": len(chunks),
++            "candidate_pool_total": total_chunk_count,
+         }
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/knowledge_fabric/service.py ./knowledge_fabric/service.py
+--- /home/claude/pristine/knowledge_fabric/service.py	2026-09-26 19:34:56.000000000 +0000
++++ ./knowledge_fabric/service.py	2026-09-27 03:07:25.045842614 +0000
+@@ -30,10 +30,19 @@
+         "text/plain", "text/markdown", "text/html", "text/csv",
+         "application/json", "txt", "md", "markdown", "html", "csv", "json",
+     }
+-    UNSUPPORTED_WITHOUT_PARSER = {
++    # G12 (docs/GAP_REGISTER.md): PDF and DOCX now have real parsers
++    # (knowledge_fabric/document_parsers.py). `content` must be base64 for
++    # these types since they're binary — see BINARY_TYPES below.
++    BINARY_TYPES = {
+         "application/pdf", "pdf",
+         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+-        "docx", "application/msword", "doc",
++        "docx",
++    }
++    # True legacy binary format (pre-2007 .doc) — no pure-Python parser
++    # ships in requirements.txt; still explicitly rejected rather than
++    # silently mis-parsed.
++    UNSUPPORTED_WITHOUT_PARSER = {
++        "application/msword", "doc",
+     }
+ 
+     def __init__(self):
+@@ -92,7 +101,22 @@
+                 f"Unsupported format without parser: {content_type}. "
+                 "Provide extracted text or install a format parser adapter."
+             )
+-        if ct not in self.SUPPORTED_TEXT_TYPES and "/" in ct:
++        if ct in self.BINARY_TYPES:
++            import base64
++
++            from knowledge_fabric.document_parsers import extract_docx_text, extract_pdf_text
++
++            try:
++                raw = base64.b64decode(content, validate=True)
++            except Exception as exc:
++                raise ValidationError(
++                    f"content must be base64-encoded for binary type {content_type!r}: {exc}"
++                ) from exc
++            if ct in ("application/pdf", "pdf"):
++                content = extract_pdf_text(raw)
++            else:
++                content = extract_docx_text(raw)
++        elif ct not in self.SUPPORTED_TEXT_TYPES and "/" in ct:
+             # unknown MIME — require explicit text extraction first
+             raise ValidationError(
+                 f"Unsupported content_type: {content_type}. "
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/observability/otlp_export.py ./observability/otlp_export.py
+--- /home/claude/pristine/observability/otlp_export.py	1970-01-01 00:00:00.000000000 +0000
++++ ./observability/otlp_export.py	2026-09-27 03:09:45.415144018 +0000
+@@ -0,0 +1,153 @@
++"""Optional external telemetry export (G16, docs/GAP_REGISTER.md).
++
++Previously "internal telemetry first" meant there was no path out of this
++process at all — spans/metrics lived only in `TelemetryStore` (this
++process's own DB). This adds a best-effort OTLP/HTTP JSON exporter using
++`httpx` (already a dependency — no new SDK weight added) so spans can flow
++to any real collector (Jaeger, Tempo, an OTel Collector, etc.) when one is
++configured.
++
++Design constraints:
++- Fully optional: does nothing unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
++- Never blocks or raises into the caller — a slow/unreachable collector must
++  never affect request latency or task execution. Runs in a background
++  thread with a short timeout and a bounded queue; drops spans under
++  sustained backpressure rather than growing unbounded.
++- JSON body shaped after the OTLP JSON traces schema
++  (resourceSpans/scopeSpans/spans) so it's usable by real collectors, but
++  this is a lightweight hand-rolled encoder, not the official
++  `opentelemetry-sdk` — treat it as best-effort compatibility, not strict
++  OTLP conformance.
++"""
++
++from __future__ import annotations
++
++import atexit
++import logging
++import os
++import queue
++import threading
++import time
++from typing import Any, Dict, Optional
++
++logger = logging.getLogger(__name__)
++
++_SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "cintexa-bi-workforce")
++
++
++def _endpoint() -> Optional[str]:
++    return os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip() or None
++
++
++def _span_to_otlp(span: Dict[str, Any]) -> Dict[str, Any]:
++    start_ns = int((span.get("start_time") or 0) * 1e9)
++    end_ns = int((span.get("end_time") or span.get("start_time") or 0) * 1e9)
++    attrs = span.get("attributes") or {}
++    kv = [
++        {"key": k, "value": {"stringValue": str(v)}}
++        for k, v in attrs.items()
++    ]
++    for extra_key in ("organisation_id", "correlation_id", "workflow_id", "task_id", "agent_id"):
++        val = span.get(extra_key)
++        if val:
++            kv.append({"key": extra_key, "value": {"stringValue": str(val)}})
++    return {
++        "traceId": (span.get("trace_id") or "").replace("-", "")[:32].zfill(32),
++        "spanId": (span.get("span_id") or "").replace("-", "")[:16].zfill(16),
++        "parentSpanId": (span.get("parent_span_id") or "").replace("-", "")[:16].zfill(16)
++        if span.get("parent_span_id")
++        else None,
++        "name": f"{span.get('component', '')}.{span.get('operation', '')}",
++        "startTimeUnixNano": str(start_ns),
++        "endTimeUnixNano": str(end_ns),
++        "status": {"code": 2 if span.get("status") == "ERROR" else 1},
++        "attributes": kv,
++    }
++
++
++class OtlpExporter:
++    """Background, fire-and-forget OTLP/HTTP JSON exporter."""
++
++    def __init__(self, max_queue: int = 2000, flush_interval_sec: float = 2.0):
++        self._q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=max_queue)
++        self._flush_interval = flush_interval_sec
++        self._stop = threading.Event()
++        self._dropped = 0
++        self._thread: Optional[threading.Thread] = None
++
++    def _ensure_started(self) -> None:
++        if self._thread is None or not self._thread.is_alive():
++            self._thread = threading.Thread(target=self._run, daemon=True, name="otlp-exporter")
++            self._thread.start()
++            atexit.register(self.shutdown)
++
++    def export_span(self, span: Dict[str, Any]) -> None:
++        if not _endpoint():
++            return
++        self._ensure_started()
++        try:
++            self._q.put_nowait(span)
++        except queue.Full:
++            self._dropped += 1
++            if self._dropped % 500 == 1:
++                logger.warning(
++                    "OTLP exporter queue full; dropped %d spans so far. "
++                    "Collector at %s may be slow/unreachable.",
++                    self._dropped,
++                    _endpoint(),
++                )
++
++    def _run(self) -> None:
++        import httpx
++
++        batch = []
++        last_flush = time.time()
++        while not self._stop.is_set():
++            try:
++                span = self._q.get(timeout=0.5)
++                batch.append(span)
++            except queue.Empty:
++                pass
++            if batch and (len(batch) >= 100 or time.time() - last_flush >= self._flush_interval):
++                self._flush(httpx, batch)
++                batch = []
++                last_flush = time.time()
++        if batch:
++            self._flush(httpx, batch)
++
++    def _flush(self, httpx_mod, batch) -> None:
++        endpoint = _endpoint()
++        if not endpoint:
++            return
++        payload = {
++            "resourceSpans": [
++                {
++                    "resource": {
++                        "attributes": [
++                            {"key": "service.name", "value": {"stringValue": _SERVICE_NAME}}
++                        ]
++                    },
++                    "scopeSpans": [
++                        {"scope": {"name": "cintexa.observability.tracing"}, "spans": [_span_to_otlp(s) for s in batch]}
++                    ],
++                }
++            ]
++        }
++        try:
++            httpx_mod.post(endpoint, json=payload, timeout=5.0)
++        except Exception as exc:  # never let export failures affect the app
++            logger.debug("OTLP export failed (non-fatal): %s", exc)
++
++    def shutdown(self) -> None:
++        self._stop.set()
++
++
++_exporter = OtlpExporter()
++
++
++def export_span(span_dict: Dict[str, Any]) -> None:
++    """Best-effort external export. No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set."""
++    try:
++        _exporter.export_span(span_dict)
++    except Exception:
++        pass
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/observability/tracing.py ./observability/tracing.py
+--- /home/claude/pristine/observability/tracing.py	2026-09-26 19:34:56.000000000 +0000
++++ ./observability/tracing.py	2026-09-27 03:11:59.056049179 +0000
+@@ -81,6 +81,11 @@
+             TelemetryStore().save_span(span)
+         except Exception:
+             pass
++        try:
++            from observability.otlp_export import export_span
++            export_span(span.to_dict())
++        except Exception:
++            pass
+         from observability.metrics import metrics
+         metrics.observe(f"span.{span.component}.latency_ms", span.duration_ms or 0, span.organisation_id or "")
+         metrics.incr(f"span.{span.component}.{status.lower()}", span.organisation_id or "")
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/requirements.txt ./requirements.txt
+--- /home/claude/pristine/requirements.txt	2026-09-26 19:34:56.000000000 +0000
++++ ./requirements.txt	2026-09-27 03:07:33.397417956 +0000
+@@ -15,6 +15,7 @@
+ markdown>=3.7
+ reportlab>=4.2.0
+ python-docx>=1.1.2
++pypdf>=5.1.0
+ pandas>=2.2.0
+ numpy>=2.1.0
+ scipy>=1.14.0
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/scripts/backup_restore.py ./scripts/backup_restore.py
+--- /home/claude/pristine/scripts/backup_restore.py	1970-01-01 00:00:00.000000000 +0000
++++ ./scripts/backup_restore.py	2026-09-27 08:48:50.183275407 +0000
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Database backup/restore for CINTEXA BI (closes G20, docs/GAP_REGISTER.md).
++
++Prior state: no backup/restore procedure existed anywhere in this repo —
++`docs/PRODUCTION_READINESS.md` only listed "Backup + restore drill evidence"
++as a missing checklist item, and `docs/RECOVERY.md` covers a different
++concern entirely (in-process restart recovery, not losing the database).
++The gap register's note ("Documented procedure; needs ops environment")
++overstated what existed — there was no documented procedure to run.
++
++This script supports both backends the app actually uses:
++  - SQLite (default for dev/test; `sqlite:///path.db`)
++  - PostgreSQL (production; `postgresql://...`)
++
++Usage:
++    python3 scripts/backup_restore.py backup  [--out PATH]
++    python3 scripts/backup_restore.py restore --in PATH [--yes]
++    python3 scripts/backup_restore.py verify  --in PATH
++
++Reads DATABASE_URL from the environment (same variable the app itself uses;
++see database/session.py). Exits non-zero on any failure — never partially
++overwrites the live database without an explicit --yes confirmation.
++"""
++
++from __future__ import annotations
++
++import argparse
++import os
++import shutil
++import sqlite3
++import subprocess
++import sys
++from pathlib import Path
++from urllib.parse import urlparse
++
++
++def _database_url() -> str:
++    url = os.environ.get("DATABASE_URL", "sqlite:///./cintexa_bi.db")
++    # normalise the async driver prefix the app defaults to, same as
++    # database/session.py does, so this script works with either form
++    if url.startswith("sqlite+aiosqlite://"):
++        url = "sqlite://" + url[len("sqlite+aiosqlite://"):]
++    return url
++
++
++def _sqlite_path(url: str) -> str:
++    # sqlite:///relative/path.db or sqlite:////absolute/path.db
++    assert url.startswith("sqlite://")
++    return url[len("sqlite://"):] or url[len("sqlite:///"):]
++
++
++def backup(out_path: str) -> None:
++    url = _database_url()
++    out = Path(out_path)
++    out.parent.mkdir(parents=True, exist_ok=True)
++
++    if url.startswith("sqlite://"):
++        src_path = _sqlite_path(url)
++        if not os.path.exists(src_path):
++            print(f"ERROR: source database does not exist: {src_path}", file=sys.stderr)
++            sys.exit(1)
++        # sqlite3's .backup API is safe against a live/open database
++        # (uses the online backup API, not a raw file copy which could
++        # race a writer mid-transaction).
++        src = sqlite3.connect(src_path)
++        dst = sqlite3.connect(str(out))
++        with dst:
++            src.backup(dst)
++        src.close()
++        dst.close()
++        print(f"OK: SQLite backup written to {out} ({out.stat().st_size} bytes)")
++    elif url.startswith("postgresql://") or url.startswith("postgres://"):
++        # pg_dump in custom format (-Fc): compressed, supports parallel
++        # restore and selective restore via pg_restore.
++        cmd = ["pg_dump", "-Fc", "-f", str(out), url]
++        result = subprocess.run(cmd, capture_output=True, text=True)
++        if result.returncode != 0:
++            print(f"ERROR: pg_dump failed:\n{result.stderr}", file=sys.stderr)
++            sys.exit(1)
++        print(f"OK: PostgreSQL backup written to {out} ({out.stat().st_size} bytes)")
++    else:
++        print(f"ERROR: unsupported DATABASE_URL scheme: {url}", file=sys.stderr)
++        sys.exit(1)
++
++
++def verify(in_path: str) -> None:
++    """Sanity-check a backup file without touching the live database."""
++    url = _database_url()
++    if url.startswith("sqlite://"):
++        con = sqlite3.connect(f"file:{in_path}?mode=ro", uri=True)
++        try:
++            result = con.execute("PRAGMA integrity_check").fetchone()
++            tables = con.execute(
++                "SELECT count(*) FROM sqlite_master WHERE type='table'"
++            ).fetchone()[0]
++            if result[0] != "ok":
++                print(f"ERROR: integrity check failed: {result[0]}", file=sys.stderr)
++                sys.exit(1)
++            print(f"OK: backup integrity check passed, {tables} tables present")
++        finally:
++            con.close()
++    elif url.startswith("postgresql://") or url.startswith("postgres://"):
++        result = subprocess.run(["pg_restore", "--list", in_path], capture_output=True, text=True)
++        if result.returncode != 0:
++            print(f"ERROR: pg_restore --list failed:\n{result.stderr}", file=sys.stderr)
++            sys.exit(1)
++        n_objects = len([l for l in result.stdout.splitlines() if l.strip()])
++        print(f"OK: backup readable, {n_objects} catalog entries present")
++    else:
++        print(f"ERROR: unsupported DATABASE_URL scheme: {url}", file=sys.stderr)
++        sys.exit(1)
++
++
++def restore(in_path: str, confirmed: bool) -> None:
++    url = _database_url()
++    if not os.path.exists(in_path):
++        print(f"ERROR: backup file not found: {in_path}", file=sys.stderr)
++        sys.exit(1)
++
++    if not confirmed:
++        print(
++            "This will OVERWRITE the live database at "
++            f"{url!r} with the contents of {in_path!r}.\n"
++            "Re-run with --yes to proceed.",
++            file=sys.stderr,
++        )
++        sys.exit(2)
++
++    if url.startswith("sqlite://"):
++        dest_path = _sqlite_path(url)
++        # Verify the backup opens cleanly before touching the live file.
++        verify(in_path)
++        if os.path.exists(dest_path):
++            safety_copy = f"{dest_path}.pre-restore-{os.getpid()}.bak"
++            shutil.copy2(dest_path, safety_copy)
++            print(f"Pre-restore safety copy of the live DB saved to {safety_copy}")
++        shutil.copy2(in_path, dest_path)
++        print(f"OK: restored {in_path} -> {dest_path}")
++    elif url.startswith("postgresql://") or url.startswith("postgres://"):
++        cmd = ["pg_restore", "--clean", "--if-exists", "--no-owner", "-d", url, in_path]
++        result = subprocess.run(cmd, capture_output=True, text=True)
++        if result.returncode != 0:
++            print(f"ERROR: pg_restore failed:\n{result.stderr}", file=sys.stderr)
++            sys.exit(1)
++        print(f"OK: restored {in_path} into {urlparse(url).path.lstrip('/')}")
++    else:
++        print(f"ERROR: unsupported DATABASE_URL scheme: {url}", file=sys.stderr)
++        sys.exit(1)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++
++    p_backup = sub.add_parser("backup", help="Write a backup of the current database")
++    p_backup.add_argument("--out", default="backups/cintexa_bi.backup", help="Output file path")
++
++    p_restore = sub.add_parser("restore", help="Restore the database from a backup file")
++    p_restore.add_argument("--in", dest="in_path", required=True, help="Backup file to restore from")
++    p_restore.add_argument("--yes", action="store_true", help="Confirm overwriting the live database")
++
++    p_verify = sub.add_parser("verify", help="Sanity-check a backup file without restoring it")
++    p_verify.add_argument("--in", dest="in_path", required=True, help="Backup file to verify")
++
++    args = parser.parse_args()
++    if args.command == "backup":
++        backup(args.out)
++    elif args.command == "restore":
++        restore(args.in_path, args.yes)
++    elif args.command == "verify":
++        verify(args.in_path)
++
++
++if __name__ == "__main__":
++    main()
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/start.sh ./start.sh
+--- /home/claude/pristine/start.sh	2026-09-26 19:34:56.000000000 +0000
 +++ ./start.sh	2026-09-26 20:50:59.142390858 +0000
 @@ -11,5 +11,13 @@
  pip install -q -r requirements.txt
@@ -158,8 +812,8 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/start.sh ./star
 +
  echo "CINTEXA BI → http://127.0.0.1:${PORT}/"
  exec uvicorn api.main:app --host 0.0.0.0 --port "$PORT"
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/tests/conftest.py ./tests/conftest.py
---- ../pristine/tests/conftest.py	1970-01-01 00:00:00.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/tests/conftest.py ./tests/conftest.py
+--- /home/claude/pristine/tests/conftest.py	1970-01-01 00:00:00.000000000 +0000
 +++ ./tests/conftest.py	2026-09-26 20:45:03.558235234 +0000
 @@ -0,0 +1,90 @@
 +"""Global pytest fixtures shared by every test module.
@@ -252,8 +906,196 @@ diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/tests/conftest.
 +        if path and not os.path.exists(path):
 +            _pin_session_db()
 +    yield
-diff -ruN '--exclude=.git' '--exclude=.pytest_cache' ../pristine/ui/assets/styles.css ./ui/assets/styles.css
---- ../pristine/ui/assets/styles.css	2026-09-26 19:34:56.000000000 +0000
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/tests/test_phase3_adversarial.py ./tests/test_phase3_adversarial.py
+--- /home/claude/pristine/tests/test_phase3_adversarial.py	2026-09-26 19:34:56.000000000 +0000
++++ ./tests/test_phase3_adversarial.py	2026-09-27 03:08:33.584880535 +0000
+@@ -32,7 +32,11 @@
+         pass
+ 
+ 
+-def test_unsupported_pdf_rejected(db_ready):
++def test_legacy_doc_format_rejected(db_ready):
++    """Legacy pre-2007 .doc has no pure-Python parser in requirements.txt
++    and is still explicitly rejected — unlike PDF/DOCX, which now have real
++    parsers (see knowledge_fabric/document_parsers.py, G12 in
++    docs/GAP_REGISTER.md)."""
+     from knowledge_fabric.service import KnowledgeFabric
+     from core.errors import ValidationError
+ 
+@@ -40,10 +44,84 @@
+     with pytest.raises(ValidationError, match="Unsupported"):
+         kf.ingest_document(
+             organisation_id="org-f",
++            content="not real doc bytes",
++            content_type="application/msword",
++            title="x",
++        )
++
++
++def test_pdf_requires_base64_and_rejects_malformed_content(db_ready):
++    from knowledge_fabric.service import KnowledgeFabric
++    from core.errors import ValidationError
++
++    kf = KnowledgeFabric()
++    # Not valid base64 at all
++    with pytest.raises(ValidationError, match="base64"):
++        kf.ingest_document(
++            organisation_id="org-f",
+             content="%PDF-1.4 fake",
+             content_type="application/pdf",
+             title="x",
+         )
++    # Valid base64, but not a real PDF once decoded
++    import base64
++
++    with pytest.raises(ValidationError, match="Could not read PDF"):
++        kf.ingest_document(
++            organisation_id="org-f",
++            content=base64.b64encode(b"not actually a pdf").decode(),
++            content_type="application/pdf",
++            title="x",
++        )
++
++
++def test_pdf_and_docx_real_parsing_and_search(db_ready):
++    """End-to-end: a real PDF and a real DOCX are ingested, extracted, and
++    become searchable, closing G12 (docs/GAP_REGISTER.md)."""
++    import base64
++    import io
++
++    import docx
++    from reportlab.pdfgen import canvas
++
++    from knowledge_fabric.service import KnowledgeFabric
++
++    pdf_buf = io.BytesIO()
++    c = canvas.Canvas(pdf_buf)
++    c.drawString(100, 750, "Quarterly churn declined after onboarding fixes.")
++    c.showPage()
++    c.save()
++
++    d = docx.Document()
++    d.add_paragraph("Competitor pricing increased eight percent in Q3.")
++    docx_buf = io.BytesIO()
++    d.save(docx_buf)
++
++    kf = KnowledgeFabric()
++    kf.ingest_document(
++        organisation_id="org-parsers",
++        content=base64.b64encode(pdf_buf.getvalue()).decode(),
++        content_type="application/pdf",
++        title="Churn Report",
++    )
++    kf.ingest_document(
++        organisation_id="org-parsers",
++        content=base64.b64encode(docx_buf.getvalue()).decode(),
++        content_type="docx",
++        title="Pricing Memo",
++    )
++
++    pdf_hits = kf.search(
++        organisation_id="org-parsers", query="churn onboarding fixes", strategy="lexical"
++    )
++    assert pdf_hits["hits"], "PDF text was not extracted/indexed"
++    assert "churn" in pdf_hits["hits"][0]["content"].lower()
++
++    docx_hits = kf.search(
++        organisation_id="org-parsers", query="competitor pricing increased", strategy="lexical"
++    )
++    assert docx_hits["hits"], "DOCX text was not extracted/indexed"
++    assert "pricing" in docx_hits["hits"][0]["content"].lower()
+ 
+ 
+ def test_html_normalize_and_search(db_ready):
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/tool_fabric/sandbox.py ./tool_fabric/sandbox.py
+--- /home/claude/pristine/tool_fabric/sandbox.py	2026-09-26 19:34:56.000000000 +0000
++++ ./tool_fabric/sandbox.py	2026-09-27 03:04:43.030145775 +0000
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import hashlib
++import logging
+ import os
+ import shutil
+ import subprocess
+@@ -12,6 +13,30 @@
+ 
+ from core.errors import AuthorizationError, ExecutionError, ValidationError
+ 
++logger = logging.getLogger(__name__)
++
++# Cached across calls: whether `unshare --net` is actually usable on this
++# host (requires the binary plus unprivileged user-namespace support, which
++# not every kernel/container runtime grants). Probed lazily so import never
++# shells out.
++_UNSHARE_NET_AVAILABLE: Optional[bool] = None
++
++
++def _unshare_net_available() -> bool:
++    global _UNSHARE_NET_AVAILABLE
++    if _UNSHARE_NET_AVAILABLE is not None:
++        return _UNSHARE_NET_AVAILABLE
++    try:
++        probe = subprocess.run(
++            ["unshare", "--net", "--map-root-user", "--", "true"],
++            capture_output=True,
++            timeout=5,
++        )
++        _UNSHARE_NET_AVAILABLE = probe.returncode == 0
++    except Exception:
++        _UNSHARE_NET_AVAILABLE = False
++    return _UNSHARE_NET_AVAILABLE
++
+ 
+ class Workspace:
+     def __init__(self, root: Path, organisation_id: str, execution_id: str):
+@@ -70,9 +95,35 @@
+                 run_env.pop(k, None)
+         if env:
+             run_env.update(env)
++
++        # `network_disabled` previously had no effect on the spawned process
++        # at all — it was accepted as a parameter (default True) but never
++        # read, so every tool-fabric process ran with full network access
++        # regardless of the flag. Enforce it for real via a network
++        # namespace when the host supports unprivileged `unshare --net`
++        # (verified: it does block outbound traffic — a process inside it
++        # cannot resolve DNS or open sockets outside loopback). When the
++        # host doesn't support it (e.g. no CAP_SYS_ADMIN / user namespaces
++        # disabled), fall back to running unisolated but log loudly rather
++        # than silently pretending isolation was applied — false confidence
++        # is worse than a visible gap.
++        network_isolation_enforced = False
++        run_argv = list(argv)
++        if network_disabled:
++            if _unshare_net_available():
++                run_argv = ["unshare", "--net", "--map-root-user", "--"] + run_argv
++                network_isolation_enforced = True
++            else:
++                logger.warning(
++                    "network_disabled=True requested but unshare --net is not "
++                    "available on this host; process %r is running WITHOUT "
++                    "network isolation. See docs/GAP_REGISTER.md G09.",
++                    argv[0],
++                )
++
+         try:
+             proc = subprocess.run(
+-                list(argv),
++                run_argv,
+                 cwd=str(cwd),
+                 capture_output=True,
+                 timeout=timeout_sec,
+@@ -86,6 +137,7 @@
+                 "stdout": stdout.decode("utf-8", errors="replace"),
+                 "stderr": stderr.decode("utf-8", errors="replace"),
+                 "truncated": len(proc.stdout) > max_output_bytes,
++                "network_isolation_enforced": network_isolation_enforced,
+             }
+         except subprocess.TimeoutExpired as e:
+             raise ExecutionError(f"Process timed out after {timeout_sec}s") from e
+diff -ruN '--exclude=.git' '--exclude=.pytest_cache' /home/claude/pristine/ui/assets/styles.css ./ui/assets/styles.css
+--- /home/claude/pristine/ui/assets/styles.css	2026-09-26 19:34:56.000000000 +0000
 +++ ./ui/assets/styles.css	2026-09-26 20:49:09.742764363 +0000
 @@ -3,232 +3,304 @@
     do not delete; nothing currently links to this file directly. */

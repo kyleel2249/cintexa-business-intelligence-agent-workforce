@@ -30,10 +30,19 @@ class KnowledgeFabric:
         "text/plain", "text/markdown", "text/html", "text/csv",
         "application/json", "txt", "md", "markdown", "html", "csv", "json",
     }
-    UNSUPPORTED_WITHOUT_PARSER = {
+    # G12 (docs/GAP_REGISTER.md): PDF and DOCX now have real parsers
+    # (knowledge_fabric/document_parsers.py). `content` must be base64 for
+    # these types since they're binary — see BINARY_TYPES below.
+    BINARY_TYPES = {
         "application/pdf", "pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "docx", "application/msword", "doc",
+        "docx",
+    }
+    # True legacy binary format (pre-2007 .doc) — no pure-Python parser
+    # ships in requirements.txt; still explicitly rejected rather than
+    # silently mis-parsed.
+    UNSUPPORTED_WITHOUT_PARSER = {
+        "application/msword", "doc",
     }
 
     def __init__(self):
@@ -92,7 +101,22 @@ class KnowledgeFabric:
                 f"Unsupported format without parser: {content_type}. "
                 "Provide extracted text or install a format parser adapter."
             )
-        if ct not in self.SUPPORTED_TEXT_TYPES and "/" in ct:
+        if ct in self.BINARY_TYPES:
+            import base64
+
+            from knowledge_fabric.document_parsers import extract_docx_text, extract_pdf_text
+
+            try:
+                raw = base64.b64decode(content, validate=True)
+            except Exception as exc:
+                raise ValidationError(
+                    f"content must be base64-encoded for binary type {content_type!r}: {exc}"
+                ) from exc
+            if ct in ("application/pdf", "pdf"):
+                content = extract_pdf_text(raw)
+            else:
+                content = extract_docx_text(raw)
+        elif ct not in self.SUPPORTED_TEXT_TYPES and "/" in ct:
             # unknown MIME — require explicit text extraction first
             raise ValidationError(
                 f"Unsupported content_type: {content_type}. "

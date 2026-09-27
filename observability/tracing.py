@@ -81,6 +81,11 @@ class Tracer:
             TelemetryStore().save_span(span)
         except Exception:
             pass
+        try:
+            from observability.otlp_export import export_span
+            export_span(span.to_dict())
+        except Exception:
+            pass
         from observability.metrics import metrics
         metrics.observe(f"span.{span.component}.latency_ms", span.duration_ms or 0, span.organisation_id or "")
         metrics.incr(f"span.{span.component}.{status.lower()}", span.organisation_id or "")

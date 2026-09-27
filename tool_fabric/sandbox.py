@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 import subprocess
@@ -11,6 +12,30 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from core.errors import AuthorizationError, ExecutionError, ValidationError
+
+logger = logging.getLogger(__name__)
+
+# Cached across calls: whether `unshare --net` is actually usable on this
+# host (requires the binary plus unprivileged user-namespace support, which
+# not every kernel/container runtime grants). Probed lazily so import never
+# shells out.
+_UNSHARE_NET_AVAILABLE: Optional[bool] = None
+
+
+def _unshare_net_available() -> bool:
+    global _UNSHARE_NET_AVAILABLE
+    if _UNSHARE_NET_AVAILABLE is not None:
+        return _UNSHARE_NET_AVAILABLE
+    try:
+        probe = subprocess.run(
+            ["unshare", "--net", "--map-root-user", "--", "true"],
+            capture_output=True,
+            timeout=5,
+        )
+        _UNSHARE_NET_AVAILABLE = probe.returncode == 0
+    except Exception:
+        _UNSHARE_NET_AVAILABLE = False
+    return _UNSHARE_NET_AVAILABLE
 
 
 class Workspace:
@@ -70,9 +95,35 @@ class Sandbox:
                 run_env.pop(k, None)
         if env:
             run_env.update(env)
+
+        # `network_disabled` previously had no effect on the spawned process
+        # at all — it was accepted as a parameter (default True) but never
+        # read, so every tool-fabric process ran with full network access
+        # regardless of the flag. Enforce it for real via a network
+        # namespace when the host supports unprivileged `unshare --net`
+        # (verified: it does block outbound traffic — a process inside it
+        # cannot resolve DNS or open sockets outside loopback). When the
+        # host doesn't support it (e.g. no CAP_SYS_ADMIN / user namespaces
+        # disabled), fall back to running unisolated but log loudly rather
+        # than silently pretending isolation was applied — false confidence
+        # is worse than a visible gap.
+        network_isolation_enforced = False
+        run_argv = list(argv)
+        if network_disabled:
+            if _unshare_net_available():
+                run_argv = ["unshare", "--net", "--map-root-user", "--"] + run_argv
+                network_isolation_enforced = True
+            else:
+                logger.warning(
+                    "network_disabled=True requested but unshare --net is not "
+                    "available on this host; process %r is running WITHOUT "
+                    "network isolation. See docs/GAP_REGISTER.md G09.",
+                    argv[0],
+                )
+
         try:
             proc = subprocess.run(
-                list(argv),
+                run_argv,
                 cwd=str(cwd),
                 capture_output=True,
                 timeout=timeout_sec,
@@ -86,6 +137,7 @@ class Sandbox:
                 "stdout": stdout.decode("utf-8", errors="replace"),
                 "stderr": stderr.decode("utf-8", errors="replace"),
                 "truncated": len(proc.stdout) > max_output_bytes,
+                "network_isolation_enforced": network_isolation_enforced,
             }
         except subprocess.TimeoutExpired as e:
             raise ExecutionError(f"Process timed out after {timeout_sec}s") from e

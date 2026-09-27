@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -9,6 +10,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from knowledge_fabric.embeddings import cosine, get_embedding_provider
 from schemas.common import new_id
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,6 +94,25 @@ class RetrievalEngine:
             if source_ids:
                 q = q.filter(KFChunk.source_id.in_(source_ids))
             chunks = q.limit(5000).all()  # bounded; index filters applied
+            # NOTE (G11, docs/GAP_REGISTER.md): there is no ANN index (no
+            # pgvector/FAISS) — this scans up to 5000 active chunks per
+            # organisation and scores them with a Python-side cosine
+            # comparison. That's a real, intentionally-deferred scalability
+            # ceiling (production ANN ops require external infra), but the
+            # 5000 cap was previously silent: an org past that size got
+            # quietly incomplete retrieval with no signal anywhere in the
+            # response. Surface it instead so operators/agents can tell.
+            total_chunk_count = q.count()
+            truncated_by_cap = total_chunk_count > len(chunks)
+            if truncated_by_cap:
+                logger.warning(
+                    "Retrieval candidate pool truncated for org=%s: %d active "
+                    "chunks exist but only the first 5000 were scored (no ANN "
+                    "index — see docs/GAP_REGISTER.md G11). Results may be "
+                    "incomplete.",
+                    organisation_id,
+                    total_chunk_count,
+                )
 
             # Permission: only sources readable by org (org_read default)
             allowed_sources = set()
@@ -220,4 +242,7 @@ class RetrievalEngine:
                 for h in hits
             ],
             "latency_ms": latency,
+            "candidate_pool_truncated": truncated_by_cap,
+            "candidate_pool_size": len(chunks),
+            "candidate_pool_total": total_chunk_count,
         }
