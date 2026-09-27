@@ -64,12 +64,20 @@ class MockSearchProvider(SearchProvider):
                 latency_ms=(time.perf_counter() - t0) * 1000,
                 failure="provider_unavailable",
             )
-        q = (query or "").lower()
+        q = (query or "").strip().lower()
+        if not q:
+            return ProviderSearchResult(
+                provider=self.name,
+                query=query,
+                status="EMPTY",
+                hits=[],
+                latency_ms=(time.perf_counter() - t0) * 1000,
+            )
         tokens = [t for t in q.replace(",", " ").split() if len(t) > 1]
         hits: List[SearchHit] = []
         for row in _CORPUS:
             score = sum(1 for t in tokens if t in row["keywords"] or t in row["title"].lower() or t in row["snippet"].lower())
-            if score > 0 or not tokens:
+            if score > 0:
                 hits.append(
                     SearchHit(
                         title=row["title"],

@@ -163,3 +163,38 @@ def test_prompt_injection_content_is_data(db_ready):
     assert out["trust_policy"] == "UNTRUSTED_EXTERNAL_CONTENT"
     ok_sources = [s for s in out["sources"] if s["access_status"] == "OK"]
     assert ok_sources
+
+
+def test_empty_query_empty_results(db_ready):
+    from internet_fabric.search import SearchFabric
+    r = SearchFabric().search("org1", "   ")
+    assert r.status == "EMPTY"
+    assert r.hits == []
+
+
+def test_all_providers_fail_no_hits(db_ready):
+    from internet_fabric.search import SearchFabric
+    from internet_fabric.providers.mock_search import MockSearchProvider
+    r = SearchFabric(providers=[MockSearchProvider(fail=True), MockSearchProvider(fail=True)]).search(
+        "org1", "example"
+    )
+    assert r.status == "FAILED"
+    assert r.hits == []
+    assert r.fallback_used is True
+
+
+def test_research_depth_increases_queries(db_ready):
+    from internet_fabric.orchestrator import InternetResearchOrchestrator
+    o = InternetResearchOrchestrator()
+    s = o.research("orgD", "example", depth="SURFACE", seed_urls=["https://example.com/"], budget={"max_queries": 10, "max_pages": 1})
+    d = o.research("orgD", "example", depth="DEEP", seed_urls=["https://example.com/"], budget={"max_queries": 10, "max_pages": 1})
+    assert d["budget_used"]["queries"] >= s["budget_used"]["queries"]
+
+
+def test_api_internet_endpoints(db_ready):
+    from fastapi.testclient import TestClient
+    from api.main import app
+    c = TestClient(app)
+    assert c.get("/internet/capabilities").status_code == 200
+    r = c.post("/internet/search", json={"query": "example"}, headers={"X-Org-Id": "orgT"})
+    assert r.status_code == 200
