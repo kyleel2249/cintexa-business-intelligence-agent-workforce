@@ -198,3 +198,60 @@ def test_api_internet_endpoints(db_ready):
     assert c.get("/internet/capabilities").status_code == 200
     r = c.post("/internet/search", json={"query": "example"}, headers={"X-Org-Id": "orgT"})
     assert r.status_code == 200
+
+
+def test_strategy_depth_families(db_ready):
+    from internet_fabric.strategy import SearchStrategyEngine
+    s = SearchStrategyEngine()
+    surface = s.plan("example product", depth="SURFACE")
+    deep = s.plan("example product", depth="DEEP")
+    assert len(deep.families) > len(surface.families)
+    assert surface.max_queries <= deep.max_queries
+
+
+def test_tenant_cache_isolation(db_ready):
+    from internet_fabric.cache import TenantCache
+    c = TenantCache()
+    c.set("orgA", "search", "q1", {"hits": 1})
+    assert c.get("orgA", "search", "q1") == {"hits": 1}
+    assert c.get("orgB", "search", "q1") is None
+
+
+def test_capabilities_expanded(db_ready):
+    from internet_fabric.capabilities import list_capabilities, REGISTRY
+    caps = list_capabilities()
+    assert len(caps) >= 30
+    assert "web.research" in REGISTRY
+    assert "web.entity_resolution" in REGISTRY
+
+
+def test_api_registry_https_only(db_ready):
+    from internet_fabric.api_registry import ExternalAPIRegistry, ExternalAPI
+    from core.errors import ValidationError
+    reg = ExternalAPIRegistry()
+    try:
+        reg.register(ExternalAPI("x", "x", "http://insecure.example", "org1"))
+        assert False, "should reject http"
+    except ValidationError:
+        pass
+    reg.register(ExternalAPI("y", "y", "https://api.example.com", "org1", endpoints={"ping": {}}))
+    out = reg.invoke_stub("y", "org1", "ping")
+    assert out["blocked"] is True
+
+
+def test_courtroom_adapter_null(db_ready):
+    from internet_fabric.courtroom_adapter import NullCourtroomSink, package_for_courtroom
+    pkg = package_for_courtroom({"research_id": "IR-1", "evidence": [], "trust_policy": "UNTRUSTED_EXTERNAL_CONTENT"})
+    sink = NullCourtroomSink()
+    r = sink.accept_internet_evidence("case1", "org1", pkg)
+    assert r["reason"] == "COURTROOM_ENGINE_NOT_INSTALLED"
+
+
+def test_plan_endpoint(db_ready):
+    from fastapi.testclient import TestClient
+    from api.main import app
+    c = TestClient(app)
+    r = c.post("/internet/plan", json={"question": "market size SaaS", "depth": "DEEP"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["families"]) >= 3

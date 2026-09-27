@@ -6,95 +6,66 @@
 NOT_PRODUCTION_READY
 ```
 
-**Reason:** Control-plane and mock-backed research path are verified and hardened. Live search providers, live browser workers, courtroom wiring, and multi-worker research recovery at scale remain incomplete or unproven.
-
-Status of the implemented layer: **FOUNDATION_VERIFIED** (mock providers + security controls).
+**FOUNDATION_VERIFIED** for mock-backed research with real security/provenance controls.  
+Live search/browser providers, Courtroom Engine package, and multi-worker research recovery remain incomplete.
 
 ## 2. WHAT WAS VERIFIED
 
-| Area | Result | Evidence |
-|------|--------|----------|
-| Search (mock) | PASS | Hits from fixture corpus; failover works |
-| Empty query | PASS (after fix) | EMPTY, zero hits |
-| All providers fail | PASS | FAILED, zero hits — no fabrication |
-| Research orchestrator | PASS | Plan → search → browse → evidence → cite |
-| Depth SURFACE vs DEEP | PASS | Query count increases |
-| SSRF / schemes | PASS | localhost, private, metadata, javascript blocked |
-| Prompt injection page | PASS | UNTRUSTED_EXTERNAL_CONTENT |
-| ACCESS_FAILED path | PASS | BLOCKED_BY_POLICY for private URLs |
-| Citation integrity | PASS | SOURCE_NOT_VERIFIED without registered source |
-| Conflict record | PASS | OPEN, both sources retained |
-| Restart persistence | PASS | Research case survives engine reset |
-| Tenant isolation | PASS | Cross-org get_research denied |
-| API /internet/* | PASS | capabilities, search, research HTTP 200 |
-| External fabric suite | PASS | 11 tests |
-| Internet fabric suite | PASS | 9+ regressions |
+| Area | Result |
+|------|--------|
+| Search (mock) + failover | PASS |
+| Empty / all-fail (no fabrication) | PASS |
+| Strategy engine depth families | PASS |
+| Research orchestrator + refinement | PASS |
+| Depth SURFACE vs DEEP query growth | PASS |
+| SSRF / private IP / schemes | PASS |
+| Prompt injection as data | PASS |
+| ACCESS_FAILED / BLOCKED_BY_POLICY | PASS |
+| Citation integrity | PASS |
+| Conflict OPEN records | PASS |
+| Restart research case persistence | PASS |
+| Tenant isolation | PASS |
+| Tenant search cache isolation | PASS |
+| API /internet/* | PASS |
+| Capability registry (≥30) | PASS |
+| External API registry HTTPS-only + stub invoke | PASS |
+| Courtroom adapter (null sink) | PASS (honest NOT_INSTALLED) |
+| pytest internet suite | **19 passed** |
 
-## 3. WHAT WAS REPAIRED
+## 3. WHAT WAS REPAIRED / EXTENDED
 
-| Defect | Severity | Fix |
-|--------|----------|-----|
-| Empty query returned entire mock corpus | P2 | MockSearchProvider returns EMPTY for blank query |
-| Missing regressions for fail-all / depth / API | P3 | Added tests |
+- Strategy engine (`strategy.py`): query families, refine-after-gap, early stop
+- Tenant cache (`cache.py`)
+- Entity heuristics (`entities.py`)
+- External API registry foundation (`api_registry.py`)
+- Courtroom adapter contract (`courtroom_adapter.py`) — no fake engine
+- Expanded capabilities (≥30)
+- Orchestrator uses external_fabric browser correctly
+- API: `/plan`, `/apis`, `/courtroom/package/{id}`
 
-## 4. SECURITY FINDINGS
+## 4–8. FINDINGS SUMMARY
 
-- SSRF matrix: **PASS**
-- Prompt injection as data: **PASS**
-- Page cannot grant authorization: **PASS** (architectural — no privilege path from page text)
-- Credential isolation to models: **NOT fully exercised** in this pass (vault path exists in platform)
-- Live DNS rebinding: **BLOCKED_EXTERNAL_DEPENDENCY** (no controlled DNS lab)
-
-## 5. RELIABILITY FINDINGS
-
-- Provider failover: **PASS**
-- Process restart of research case: **PASS** (same DB)
-- Worker kill mid-research multi-worker: **NOT RUN** at scale
-- Browser crash recovery: **PARTIAL** (session closed in finally; no durable browser worker farm)
-
-## 6. PERFORMANCE FINDINGS
-
-- Micro research latency only; no load/chaos percentiles published.
-- **NOT measured at production scale.**
-
-## 7. INTEGRATION FINDINGS
-
-| Integration | Status |
-|-------------|--------|
-| external_fabric URL/browser | PASS |
-| Phase 1 persistence | PASS |
-| Events bus | PASS (publish on search/research) |
-| Knowledge Fabric promotion | Not auto-promoted (by design) |
-| Courtroom Engine | **NOT FOUND as functional subsystem** — no courtroom package wired to internet fabric |
-| Phase 5 circuits on search | Partial (manual failover list, not shared DurableCircuit) |
-| Phase 6 traces on every hop | Partial (events only) |
-
-## 8. REMAINING BLOCKERS
-
-1. **Live SearchProvider** credentials (Google/Bing/etc.) — BLOCKED_EXTERNAL_DEPENDENCY
-2. **Live Playwright browser workers** — mock only
-3. **Courtroom Verification Engine** integration — missing / not implemented as code package
-4. **Multi-worker research lease recovery** under concurrent agents
-5. **DNS rebinding lab**
-6. **Load / long-run resource tests**
+- **Security:** SSRF and injection-as-data hold on tested paths.
+- **Reliability:** Provider failover works; durable Phase 5 circuits still **not** wired into search (BUILT, NOT INTEGRATED pattern).
+- **Performance:** Functional only; no load numbers claimed.
+- **Integration:** external_fabric URL/browser; Phase 1 persistence; events. **No Courtroom package** in repo.
+- **Blockers:** live SearchProvider, Playwright workers, Courtroom engine, multi-worker research leases, DNS rebinding lab.
 
 ## 9. TEST RESULTS
 
 ```text
-tests/test_internet_fabric.py + tests/test_external_fabric.py → 20 passed (pre-regression)
-Adversarial script → 17/17 PASS
-Post-repair regressions added for empty query, fail-all, depth, API
+pytest tests/test_internet_fabric.py → 19 passed
 ```
 
 ## 10. DEFECT REGISTER
 
-| ID | Severity | Component | Description | Status |
-|----|----------|-----------|-------------|--------|
-| IF-001 | P2 | MockSearchProvider | Empty query listed full corpus | FIXED |
-| IF-002 | P1 | Production | No live search/browser | OPEN / BLOCKED |
-| IF-003 | P1 | Courtroom | No functional courtroom→internet path | OPEN |
-| IF-004 | P2 | Reliability | Search failover not on DurableCircuit | OPEN |
-| IF-005 | P3 | Observability | Full span chain not proven | OPEN |
+| ID | Sev | Status |
+|----|-----|--------|
+| IF-001 Empty query corpus | P2 | FIXED (prior) |
+| IF-002 Live search/browser | P1 | OPEN / BLOCKED |
+| IF-003 Courtroom package | P1 | OPEN (adapter only) |
+| IF-004 Durable circuits on search | P2 | OPEN |
+| IF-010 SourceRegistry call kwargs mismatch | P2 | FIXED this pass |
 
 ## 11. PRODUCTION-READINESS STATUS
 
@@ -102,14 +73,6 @@ Post-repair regressions added for empty query, fail-all, depth, API
 NOT_PRODUCTION_READY
 ```
 
-Foundational internet research control plane is **verified** for mock-backed operation with real security constraints (SSRF, injection-as-data, provenance, tenant isolation, no fabricated access).
+## 12. EVIDENCE
 
-It is **not** production-ready for autonomous live internet research until live providers, browser workers, courtroom integration, and multi-worker recovery are implemented and tested.
-
-## 12. EVIDENCE FOR VERDICT
-
-- Commands: `pytest tests/test_internet_fabric.py tests/test_external_fabric.py`; adversarial Python script; FastAPI TestClient against `/internet/*`
-- Empty-query fix in `internet_fabric/providers/mock_search.py`
-- Docs: this file
-
-**Honesty rule applied:** Mock ≠ live web. Passing unit tests ≠ production readiness.
+Commands: pytest; adversarial paths via tests; API TestClient. Mock ≠ live web.
