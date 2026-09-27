@@ -69,6 +69,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from api.internet import router as internet_router
+app.include_router(internet_router)
+
 _cors = list(dict.fromkeys(settings.cors_origin_list + [
     "https://cintexa-business-intelligence-agent-workforce.pages.dev",
     "http://localhost:5500",
